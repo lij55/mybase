@@ -1,0 +1,10 @@
+.env
+.env.*
+!.env.example
+backups/
+volumes/db/data/
+volumes/storage/
+volumes/snippets/
+__pycache__/
+*.pyc
+*.partial

@@ -1,0 +1,86 @@
+name: ${COMPOSE_PROJECT_NAME:-mybase}
+
+# Requires Docker Compose >= 2.24.4 (!override and !reset).
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: '10m'
+    max-file: '3'
+
+services:
+  studio:
+    container_name: !reset null
+    logging: *logging
+  api-gw:
+    container_name: !reset null
+    ports: !override
+      - '127.0.0.1:${STUDIO_PORT:-8001}:8000'
+    logging: *logging
+  auth:
+    container_name: !reset null
+    logging: *logging
+  rest:
+    container_name: !reset null
+    logging: *logging
+  realtime:
+    # Tenant routing in the upstream healthcheck requires this prefix.
+    container_name: realtime-dev.${COMPOSE_PROJECT_NAME:-mybase}-realtime
+    networks:
+      default:
+        aliases:
+          - realtime-dev.supabase-realtime
+    logging: *logging
+  storage:
+    container_name: !reset null
+    environment:
+      FILE_SIZE_LIMIT: ${STORAGE_FILE_SIZE_LIMIT:-52428800}
+    logging: *logging
+  imgproxy:
+    container_name: !reset null
+    logging: *logging
+  meta:
+    container_name: !reset null
+    logging: *logging
+  functions:
+    container_name: !reset null
+    logging: *logging
+  db:
+    container_name: !reset null
+    logging: *logging
+  supavisor:
+    container_name: !reset null
+    ports: !override
+      - '127.0.0.1:${DB_SESSION_PORT:-5432}:5432'
+      - '127.0.0.1:${DB_TRANSACTION_PORT:-6543}:6543'
+    logging: *logging
+  public-api:
+    image: nginx:1.28.0-alpine
+    restart: unless-stopped
+    depends_on:
+      api-gw:
+        condition: service_healthy
+    ports:
+      - '127.0.0.1:${PUBLIC_API_PORT:-8000}:8080'
+    volumes:
+      - ./config/public-api.conf:/etc/nginx/conf.d/default.conf:ro
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '--spider', 'http://127.0.0.1:8080/healthz']
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    logging: *logging
+  cloudflared:
+    image: ${CLOUDFLARED_IMAGE:-cloudflare/cloudflared:2026.9.0}
+    profiles: ['tunnel']
+    restart: unless-stopped
+    depends_on:
+      public-api:
+        condition: service_healthy
+    command: ['tunnel', '--no-autoupdate', 'run']
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
+      TUNNEL_TRANSPORT_PROTOCOL: ${TUNNEL_TRANSPORT_PROTOCOL:-auto}
+    read_only: true
+    cap_drop: ['ALL']
+    security_opt: ['no-new-privileges:true']
+    logging: *logging

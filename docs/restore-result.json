@@ -1,0 +1,11 @@
+{
+  "archive": "mybase-20260929-190223.tar.gz",
+  "sha256": "007b1fa05f24c815c864b8a465c31058afabbef7310401a4f8e572b4bb102dd9",
+  "result": "pass",
+  "checks": [
+    "original secrets preserved",
+    "physical database system_identifier matches",
+    "make up and make integration passed"
+  ],
+  "stage": "/tmp/mybase-restore-mu17d2d2"
+}
