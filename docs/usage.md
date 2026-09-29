@@ -83,4 +83,4 @@ Storage 对象键有字符限制，建议使用 `UUID` 等 ASCII 名称，把中
 
 ## 可选的集成验证
 
-服务启动后运行 `make integration`。它创建两个临时用户、随机名称的业务表与私有 bucket，验证 Auth、RLS、上传下载、Functions 和 WebSocket 握手，最后清理测试资源。此命令会写入测试数据，只在开发/演练环境执行；进程被强制中断时可能留下 `test_` 前缀资源，需要核对并清理。
+运行 `make up && make test` 验证配置和当前已启用的关键功能；`make integration` 可单独运行实例测试，`make unit` 只运行离线测试。集成测试按用例创建临时用户、随机名称的业务表、RPC 与私有 bucket，覆盖会话、CRUD/RLS、签名下载、Functions、Realtime 实际事件、广播/Presence、Studio 和连接池，最后逐项清理。此命令会写入测试数据，只在开发/演练环境执行；进程被强制中断时可能留下 `test_` / `test-` 前缀资源，需要核对并清理。详见[测试说明](testing.md)。

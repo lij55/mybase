@@ -18,7 +18,7 @@
 | MFA | 增强认证 | 未做当前实例端到端验收，业务上线前需单独配置与测试 |
 | Storage | 私有文件、bucket、签名 URL | 本地文件后端可用，私有读写和跨用户拒绝已实测 |
 | 图片转换 / S3 兼容接口 | 图片处理、兼容存储工具 | 服务配置具备入口，未做专项端到端验收 |
-| Realtime | 数据库变化、广播、在线状态 | 服务和 WebSocket 握手已验证；业务事件投递需另行验收 |
+| Realtime | 数据库变化、广播、在线状态 | 已实测 INSERT 事件投递与跨用户隔离、WebSocket 广播及 Presence |
 | Edge Functions | 受控服务端逻辑、对接外部 API | 已实测 `hello` 的用户鉴权调用 |
 | GraphQL | 按需选择字段及关联数据 | 路由已配置；当前 `pg_graphql` 尚未启用，需先配置扩展 |
 | 向量检索、定时 SQL | 语义相似度搜索、周期数据库任务 | `vector`、`pg_cron` 可用但未启用 |
@@ -179,7 +179,7 @@ const channel = supabase.channel('my-todo-updates')
 // await supabase.removeChannel(channel)
 ```
 
-业务上线前需实际执行插入并验证事件到达。当前验证记录只证明 WebSocket 握手成功，不证明所有事件、删除语义和重连行为已验证。
+当前 `make test` 会实际订阅临时表、插入数据并验证 INSERT 事件到达及跨用户隔离，也验证 WebSocket 广播和 Presence。业务上线前仍需验收自身表策略、UPDATE/DELETE 语义、私有频道授权和断线重连。
 
 Broadcast 用于协作事件或房间消息，Presence 用于在线成员/状态同步。这两类能力由 Realtime 提供，私有房间要另外设计 channel 授权；业务表的 RLS 不会自动变成所有房间的成员规则。参见[Broadcast](https://supabase.com/docs/guides/realtime/broadcast) 与 [Presence](https://supabase.com/docs/guides/realtime/presence)。
 

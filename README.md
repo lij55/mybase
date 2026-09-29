@@ -25,14 +25,25 @@ make up
 make check                 # 配置校验，不打印密钥
 make ps                    # 容器状态
 make smoke                 # Auth / REST / 管理路径隔离检查
-make integration           # 开发环境完整集成测试，临时数据自动清理
+make integration           # 仅运行本地功能集成测试，临时数据自动清理
 make logs SERVICE=auth     # 最近日志
 make down                  # 停止，保留数据
 make up                    # 重新启动 / 应用 .env 修改
 make backup                # 有停机的一致性冷备份
 make psql                  # 数据库终端
-make test                  # 本地配置逻辑测试
+make test                  # 配置、安全边界和关键功能测试（需已启动）
+make unit                  # 仅离线单元测试，无需 Docker
 ```
+
+## 功能验收
+
+```bash
+make up && make test
+```
+
+`make test` 顺序运行 12 项离线测试和 11 项真实实例集成测试，覆盖 Auth 会话、REST CRUD/RLS、RPC、Storage 私有文件与签名下载、Realtime 事件/广播/Presence、Edge Functions、Studio 和两种 SQL 连接池。任何断言、服务连接或资源清理失败均返回非零退出码；服务未启动不会跳过集成测试。只需原有 Python 标准库及 Docker，无需安装 SDK 或宿主机 psql。
+
+集成测试创建随机命名的临时用户、表、函数、bucket 和策略，正常结束或断言失败后逐项清理。SQL 连接池使用现有数据库镜像的临时客户端，经 Linux host 网络验证实际宿主机端口。未启用的 GraphQL 扩展及未配置的 SMTP、OAuth、公网 Tunnel 不属于通过范围。完整覆盖和运行说明见[测试说明](docs/testing.md)。
 
 ## 公网架构
 
