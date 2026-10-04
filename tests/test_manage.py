@@ -15,6 +15,7 @@ class ConfigurationTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
         shutil.copy(manage.ROOT / '.env.example', self.root / '.env.example')
+        shutil.copytree(manage.ROOT / 'caddy', self.root / 'caddy', ignore=shutil.ignore_patterns('Caddyfile'))
         with contextlib.redirect_stdout(io.StringIO()):
             self.values = manage.init(self.root)
 
@@ -32,6 +33,29 @@ class ConfigurationTests(unittest.TestCase):
             manage.init(self.root)
         self.assertEqual(before, (self.root / '.env').read_bytes())
 
+    def test_caddy_init_preserves_custom_config(self):
+        path = self.root / 'caddy/Caddyfile'
+        self.assertIn('127.0.0.1:8000', path.read_text())
+        path.write_text('# custom config\n')
+        with contextlib.redirect_stdout(io.StringIO()):
+            manage.init(self.root)
+        self.assertEqual(path.read_text(), '# custom config\n')
+
+    def test_caddy_custom_hosts_ports_and_invalid_hosts(self):
+        path = self.root / 'caddy/Caddyfile'
+        path.unlink()
+        self.values.update(CADDY_API_HOST='api.example.com', CADDY_ADMIN_HOST='admin.example.com', PUBLIC_API_PORT='9000')
+        manage.init_caddy(self.root, self.values)
+        self.assertIn('@api host api.example.com', path.read_text())
+        self.assertIn('127.0.0.1:9000', path.read_text())
+        path.unlink()
+        self.values['CADDY_ADMIN_HOST'] = 'api.example.com'
+        with self.assertRaises(ValueError):
+            manage.init_caddy(self.root, self.values)
+        self.values['CADDY_ADMIN_HOST'] = 'evil.example { respond 200 }'
+        with self.assertRaises(ValueError):
+            manage.init_caddy(self.root, self.values)
+
     def test_wrong_jwt_secret_rejected(self):
         self.values['JWT_SECRET'] = 'a' * 64
         with self.assertRaisesRegex(ValueError, '签名'):
@@ -46,12 +70,6 @@ class ConfigurationTests(unittest.TestCase):
             manage.init(self.root)
 
     def test_public_mode_requires_real_configuration(self):
-        self.values['TUNNEL_ENABLED'] = 'true'
-        with self.assertRaisesRegex(ValueError, 'TUNNEL_TOKEN'):
-            manage.validate(self.values)
-        self.values['TUNNEL_TOKEN'] = 'example-token'
-        with self.assertRaisesRegex(ValueError, 'HTTPS'):
-            manage.validate(self.values)
         self.values.update(SUPABASE_PUBLIC_URL='https://api.example.com', API_EXTERNAL_URL='https://api.example.com/auth/v1', SITE_URL='https://app.example.com')
         manage.validate(self.values)
         self.values['ENABLE_EMAIL_AUTOCONFIRM'] = 'true'
@@ -59,7 +77,7 @@ class ConfigurationTests(unittest.TestCase):
             manage.validate(self.values)
 
     def test_smtp_required_for_public_signup(self):
-        self.values.update(TUNNEL_ENABLED='true', TUNNEL_TOKEN='example', SUPABASE_PUBLIC_URL='https://api.example.com', API_EXTERNAL_URL='https://api.example.com/auth/v1', SITE_URL='https://app.example.com', DISABLE_SIGNUP='false')
+        self.values.update(SUPABASE_PUBLIC_URL='https://api.example.com', API_EXTERNAL_URL='https://api.example.com/auth/v1', SITE_URL='https://app.example.com', DISABLE_SIGNUP='false')
         with self.assertRaisesRegex(ValueError, 'SMTP_HOST'):
             manage.validate(self.values)
 

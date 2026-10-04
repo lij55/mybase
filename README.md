@@ -10,7 +10,7 @@
 make up
 ```
 
-第一次自动从 `.env.example` 创建权限 `0600` 的 `.env` 并生成随机密钥；之后不会覆盖已有非空变量。也可以先运行 `make init`，编辑 `.env`，再 `make up`。默认关闭新用户注册且不启用 Tunnel。首次下载镜像需要时间和可访问镜像仓库的网络。
+第一次自动从 `.env.example` 创建权限 `0600` 的 `.env` 并生成随机密钥；之后不会覆盖已有非空变量。也可以先运行 `make init`，编辑 `.env`，再 `make up`。同时生成 `caddy/Caddyfile`，已有文件不覆盖。默认关闭新用户注册。首次下载镜像需要时间和可访问镜像仓库的网络。
 
 | 入口 | 默认地址 | 用途 |
 | --- | --- | --- |
@@ -41,31 +41,33 @@ make unit                  # 仅离线单元测试，无需 Docker
 make up && make test
 ```
 
-`make test` 顺序运行 12 项离线测试和 11 项真实实例集成测试，覆盖 Auth 会话、REST CRUD/RLS、RPC、Storage 私有文件与签名下载、Realtime 事件/广播/Presence、Edge Functions、Studio 和两种 SQL 连接池。任何断言、服务连接或资源清理失败均返回非零退出码；服务未启动不会跳过集成测试。只需原有 Python 标准库及 Docker，无需安装 SDK 或宿主机 psql。
+`make test` 顺序运行 14 项离线测试和 11 项真实实例集成测试，覆盖 Auth 会话、REST CRUD/RLS、RPC、Storage 私有文件与签名下载、Realtime 事件/广播/Presence、Edge Functions、Studio 和两种 SQL 连接池。任何断言、服务连接或资源清理失败均返回非零退出码；服务未启动不会跳过集成测试。只需原有 Python 标准库及 Docker，无需安装 SDK 或宿主机 psql。
 
-集成测试创建随机命名的临时用户、表、函数、bucket 和策略，正常结束或断言失败后逐项清理。SQL 连接池使用现有数据库镜像的临时客户端，经 Linux host 网络验证实际宿主机端口。未启用的 GraphQL 扩展及未配置的 SMTP、OAuth、公网 Tunnel 不属于通过范围。完整覆盖和运行说明见[测试说明](docs/testing.md)。
+集成测试创建随机命名的临时用户、表、函数、bucket 和策略，正常结束或断言失败后逐项清理。SQL 连接池使用现有数据库镜像的临时客户端，经 Linux host 网络验证实际宿主机端口。未启用的 GraphQL 扩展及未配置的 SMTP、OAuth、公网 HTTPS 不属于通过范围。完整覆盖和运行说明见[测试说明](docs/testing.md)。
 
 ## 公网架构
 
 ```mermaid
 flowchart LR
   Frontend[前端浏览器] -->|HTTPS / WSS| CF[Cloudflare]
-  CF --> Tunnel[cloudflared Tunnel]
-  Tunnel --> Public[public-api:8080 路径白名单]
+  CF --> Caddy[宿主机 Caddy]
+  Caddy -->|API 子域名| Public[public-api 路径白名单]
   Public --> Gateway[官方 Envoy 网关]
   Gateway --> Services[Auth / REST / Storage / Realtime / Functions]
   Services --> DB[(PostgreSQL)]
-  Admin[管理员 SSH 转发] -->|本机 8001| Gateway
+  Caddy -->|管理子域名 / Basic Auth| Gateway
   Gateway --> Studio[Studio]
 ```
 
-Cloudflare Tunnel 要指向 **`http://public-api:8080`**。不要指向 `api-gw:8000` 或 `studio:3000`，否则绕过公网路径限制。域名、DNS、Tunnel token 和 SMTP 需要你提供；本仓库不会自动修改 Cloudflare 账户。
+推荐两个子域名：`api.example.com` → `127.0.0.1:8000`（业务 API），`admin.example.com` → `127.0.0.1:8001`（Studio，保留网关 Basic Auth）。API 保留 `/auth/v1`、`/rest/v1` 等原路径，Studio 使用独立域名的根路径。
+
+`make init` 生成供**宿主机 Caddy** 使用的 `caddy/Caddyfile`，默认监听 `127.0.0.1:8080`，按 `api.localhost` / `admin.localhost` 分流。编辑其中域名后，使用 `caddy run --config caddy/Caddyfile --adapter caddyfile` 启动；`make up` 只管理 Supabase 容器。外部 HTTPS 入口保留原始 Host，证书与入口由你单独管理；本仓库不配置或启动 Tunnel。详见[部署说明](docs/deployment.md)。
 
 ## 文档
 
-- [容器用途与主要配置项](docs/containers.md)：全部 13 个服务的职责、入口、关键参数与依赖。
+- [容器用途与主要配置项](docs/containers.md)：全部 12 个服务的职责、入口、关键参数与依赖。
 - [当前实例功能与示例](docs/features.md)：数据库、认证、文件、实时通信、函数，以及需额外启用的能力。
-- [部署与 Cloudflare Tunnel](docs/deployment.md)：云主机、域名、回调、邮件和公网验收。
+- [部署与 Caddy](docs/deployment.md)：云主机、域名、回调、邮件和公网验收。
 - [环境变量说明](docs/configuration.md)：默认值、密钥模式和配置修改边界。
 - [前端与 SQL 使用](docs/usage.md)：Auth、RLS、Storage、Realtime、Functions 和报表连接。
 - [运维、备份与恢复](docs/operations.md)：冷备份、恢复演练、升级、监控和迁移。

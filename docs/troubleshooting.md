@@ -15,8 +15,6 @@
 | 修改数据库密码后登录失败 | `.env` 与数据库角色密码不一致 | 恢复原变量，按计划更新所有相关角色及连接参数 |
 | `401` / `Invalid JWT` | anon/service JWT 和 JWT_SECRET 不配套、token 过期、系统时钟偏差 | 检查成套配置和 NTP；`make check` 验签；重新登录，不要关闭鉴权 |
 | 查询空数组 / `42501` / 上传 403 | 没登录、grants/RLS/bucket 策略不匹配 | 用实际用户 JWT 检查角色、owner 和策略；不要把 service key 放前端解决 |
-| Tunnel 1033 / connector 不在线 | token 无效、出站受限 | 检查 cloudflared 日志和 token；必要时 `TUNNEL_TRANSPORT_PROTOCOL=http2`，确认出站 7844 可用 |
-| Tunnel 502 | 路由填了 localhost、目标服务未健康 | 容器模式目标为 `http://public-api:8080`，先验证本机 `make smoke` |
 | API 根路径 404 | 预期路径隔离 | SDK 用 API 根 URL，但测试服务用 `/auth/v1/health`；Studio 在本机 8001 |
 | CORS / 浏览器返回 HTML | Cloudflare Access / Challenge / WAF 拦截 API | 检查 OPTIONS 与具体响应；业务 API 不使用交互式登录门禁，调整规则后重测 |
 | 邮件发送失败 / 回调到 localhost | SMTP 无效、变量或跳转白名单错误 | 校验发信域名、三个 URL 和 allow list，`make up` 应用，再重新发送邮件 |

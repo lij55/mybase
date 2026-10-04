@@ -63,6 +63,30 @@ def jwt(secret, role):
     return content + '.' + b64(hmac.new(secret.encode(), content.encode(), hashlib.sha256).digest())
 
 
+def init_caddy(root, values):
+    path = root / 'caddy/Caddyfile'
+    if path.exists():
+        return
+    api = values.get('CADDY_API_HOST', 'api.localhost')
+    admin = values.get('CADDY_ADMIN_HOST', 'admin.localhost')
+    for host in (api, admin):
+        if not re.fullmatch(r'[a-zA-Z0-9]+(?:[.-][a-zA-Z0-9]+)*', host):
+            raise ValueError('CADDY_API_HOST / CADDY_ADMIN_HOST 必须是域名，不带协议、端口或路径')
+    if api.lower() == admin.lower():
+        raise ValueError('Caddy API 与管理域名必须不同')
+    ports = [int(values.get(k, default)) for k, default in
+             [('CADDY_PORT', '8080'), ('PUBLIC_API_PORT', '8000'), ('STUDIO_PORT', '8001')]]
+    if len(set(ports)) != 3 or any(p < 1024 or p > 65535 for p in ports):
+        raise ValueError('Caddy/API/Studio 端口必须不同且位于 1024..65535')
+    template = (root / 'caddy/Caddyfile.example').read_text()
+    for key, value in zip(('CADDY_API_HOST', 'CADDY_ADMIN_HOST', 'CADDY_PORT', 'PUBLIC_API_PORT', 'STUDIO_PORT'),
+                          (api, admin, *ports)):
+        template = template.replace('@@' + key + '@@', str(value))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open('x') as handle:
+        handle.write(template)
+
+
 def init(root=ROOT):
     path = root / '.env'
     if not path.exists():
@@ -92,7 +116,10 @@ def init(root=ROOT):
         tmp.replace(path)
     path.chmod(0o600)
     print('配置已就绪：.env（密钥不显示，已有非空值不覆盖）')
-    return read_env(path)
+    values = read_env(path)
+    init_caddy(root, values)
+    print('Caddy 配置已就绪：caddy/Caddyfile（已有文件不覆盖）')
+    return values
 
 
 def validate(v):
@@ -130,29 +157,25 @@ def validate(v):
     ports = [int(v[k]) for k in ['PUBLIC_API_PORT', 'STUDIO_PORT', 'DB_SESSION_PORT', 'DB_TRANSACTION_PORT']]
     if len(set(ports)) != len(ports) or any(p < 1024 or p > 65535 for p in ports):
         raise ValueError('四个宿主机端口必须各不相同，且位于 1024..65535')
-    for k in ['TUNNEL_ENABLED', 'DISABLE_SIGNUP', 'ENABLE_EMAIL_AUTOCONFIRM', 'FUNCTIONS_VERIFY_JWT']:
+    for k in ['DISABLE_SIGNUP', 'ENABLE_EMAIL_AUTOCONFIRM', 'FUNCTIONS_VERIFY_JWT']:
         if v.get(k) not in ('true', 'false'):
             raise ValueError(f'{k} 必须为 true 或 false')
-    if v['TUNNEL_ENABLED'] == 'true':
-        if not v.get('TUNNEL_TOKEN'):
-            raise ValueError('启用 Tunnel 前必须填写 TUNNEL_TOKEN')
-        if any(urlparse(v[k]).scheme != 'https' or urlparse(v[k]).hostname in ('localhost', '127.0.0.1') for k in ['SUPABASE_PUBLIC_URL', 'SITE_URL']):
-            raise ValueError('启用 Tunnel 必须配置公网 HTTPS API 和前端 URL')
+    if urlparse(v['SUPABASE_PUBLIC_URL']).hostname not in ('localhost', '127.0.0.1', '::1'):
+        if any(urlparse(v[k]).scheme != 'https' for k in ['SUPABASE_PUBLIC_URL', 'SITE_URL']):
+            raise ValueError('公网部署必须配置 HTTPS API 和前端 URL')
         if v['ENABLE_EMAIL_AUTOCONFIRM'] == 'true' or v.get('ENABLE_PHONE_AUTOCONFIRM') == 'true':
             raise ValueError('公网模式禁止自动确认邮箱/手机号')
         if v['FUNCTIONS_VERIFY_JWT'] != 'true':
             raise ValueError('公网模式必须启用 Functions JWT 校验')
         if v['DISABLE_SIGNUP'] == 'false' and not v.get('SMTP_HOST'):
             raise ValueError('公网开放注册前必须配置可用的 SMTP_HOST')
-    if v.get('TUNNEL_TRANSPORT_PROTOCOL') not in ('auto', 'http2', 'quic'):
-        raise ValueError('TUNNEL_TRANSPORT_PROTOCOL 必须为 auto/http2/quic')
 
 
 def compose(v, args, **kwargs):
     # .env is authoritative; prevent exported shell variables overriding it.
     env = {k: value for k, value in os.environ.items() if k not in v and not k.startswith('COMPOSE_')}
     cmd = ['docker', 'compose', '--project-directory', str(ROOT), '--env-file', str(ROOT / '.env'),
-           '-p', v['COMPOSE_PROJECT_NAME'], '-f', str(ROOT / 'docker-compose.yml'), '-f', str(ROOT / 'compose.override.yml'), '--profile', 'tunnel']
+           '-p', v['COMPOSE_PROJECT_NAME'], '-f', str(ROOT / 'docker-compose.yml'), '-f', str(ROOT / 'compose.override.yml')]
     return subprocess.run(cmd + args, env=env, check=True, **kwargs)
 
 
@@ -235,15 +258,11 @@ def main():
         print('变量和 Compose 校验通过（不输出密钥）')
     elif args.action in ('up', 'restart', 'pull'):
         cfg = config(v)
-        services = [s for s in cfg['services'] if s != 'cloudflared' or v['TUNNEL_ENABLED'] == 'true']
-        if args.action != 'pull' and v['TUNNEL_ENABLED'] != 'true':
-            compose(v, ['stop', 'cloudflared'])
+        services = list(cfg['services'])
         compose(v, ['pull', *services] if args.action == 'pull' else ['up', '-d', '--wait', '--wait-timeout', v['UP_TIMEOUT'], *services])
         if args.action != 'pull':
             smoke(v)
             print(f"Studio: http://localhost:{v['STUDIO_PORT']}  API: {v['SUPABASE_PUBLIC_URL']}")
-            if v['TUNNEL_ENABLED'] == 'true':
-                print('Tunnel 进程已启动；需在 Cloudflare 控制台另行核验 Healthy 和公网路由。')
     elif args.action == 'down':
         compose(v, ['down', '--remove-orphans'])
     elif args.action == 'ps':

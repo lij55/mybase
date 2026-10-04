@@ -1,6 +1,6 @@
 # 容器用途与主要配置项
 
-本文对应本仓库的固定部署版本，依据 [基础 Compose](../docker-compose.yml)、[本地覆盖配置](../compose.override.yml) 和 [API 入口配置](../config/public-api.conf)。共有 **12 个默认服务 + 1 个可选 cloudflared 服务**。表中的名称是 Compose 服务名，可以直接用于 `make logs SERVICE=auth` 等命令。
+本文对应本仓库的固定部署版本，依据 [基础 Compose](../docker-compose.yml)、[本地覆盖配置](../compose.override.yml) 和 [API 入口配置](../config/public-api.conf)。共有 **12 个默认服务**。表中的名称是 Compose 服务名，可以直接用于 `make logs SERVICE=auth` 等命令。
 
 `.env` 中的变量通常会映射成容器内部的另一个名字，例如 `SITE_URL` → `GOTRUE_SITE_URL`。只有被 Compose 引用的变量才会传入服务；向 `.env` 随便新增变量不会自动改变容器。以下标为“Compose 固定项”的值需要在覆盖配置中修改，不能只改 `.env`。
 
@@ -20,12 +20,12 @@
 | `functions` | 在 Deno Edge Runtime 中执行 TypeScript/JavaScript 函数 | 9000 | 经 `/functions/v1/` |
 | `db` | PostgreSQL，保存业务表及各服务元数据 | 5432 | 不直接映射，由连接池提供 SQL 入口 |
 | `supavisor` | 数据库连接池，复用到 PostgreSQL 的连接 | 5432 / 6543；4000 为内部管理/健康端口 | `127.0.0.1:5432` / `127.0.0.1:6543` |
-| `cloudflared` | 可选 Cloudflare Tunnel 连接器 | 无业务监听端口 | 无入站端口，主动连接 Cloudflare |
 
 ```mermaid
 flowchart TD
   Browser[浏览器 SDK] --> Public[public-api]
-  CF[Cloudflare Tunnel 可选] --> Public
+  Caddy[宿主机 Caddy / API 域名] --> Public
+  Caddy -->|管理域名| GW
   Public --> GW[api-gw / Envoy]
   Admin[管理员本机或 SSH 转发] --> GW
   GW --> Studio[studio]
@@ -49,7 +49,7 @@ flowchart TD
 
 ## 2. public-api：对前端开放的入口
 
-镜像：`nginx:1.28.0-alpine`。业务 SDK 和 Tunnel 均应访问它，避免直接进入包含管理路由的官方网关。
+镜像：`nginx:1.28.0-alpine`。业务 API 域名应转发到它，避免直接进入包含管理路由的官方网关。
 
 | 配置项 | 位置与含义 |
 | --- | --- |
@@ -236,24 +236,10 @@ CPU、内存、磁盘与 PostgreSQL 调优不是靠 `POSTGRES_PASSWORD` 等应�
 
 Session 模式适合依赖会话状态的工具；Transaction 模式按事务复用连接，使用前检查 ORM 的会话特性与 prepared statements 支持。增加客户端连接上限不能替代数据库容量扩容。
 
-## 14. cloudflared：可选公网连接器
-
-镜像由 `CLOUDFLARED_IMAGE` 指定，模板固定为 `cloudflare/cloudflared:2026.9.0`。默认 `TUNNEL_ENABLED=false`，不启动。
-
-| 配置项 | 含义 |
-| --- | --- |
-| `TUNNEL_ENABLED` | 本地启动脚本开关，不是 cloudflared 自身变量 |
-| `TUNNEL_TOKEN` | Cloudflare 远程管理 Tunnel 的凭证 |
-| `TUNNEL_TRANSPORT_PROTOCOL` | `auto` / `quic` / `http2`，用于适配出站网络 |
-| `CLOUDFLARED_IMAGE` | 固定镜像版本；容器关闭自动更新，由运维统一升级 |
-| Cloudflare hostname 路由 | 在 Cloudflare 控制台配置，目标为 **`http://public-api:8080`** |
-
-它不负责 Supabase 用户认证，也不把 PostgreSQL 变成公网 HTTP 数据库。`Running` 不能证明 Tunnel 已连通，必须检查 Cloudflare connector 状态和外部访问。
-
-## 15. 公共配置与未部署组件
+## 14. 公共配置与未部署组件
 
 所有服务设置 `restart: unless-stopped`；日志使用 `json-file`，每份 10 MB、保留 3 份。健康检查用来报告状态和控制启动顺序，不代表健康失败时一定自动重启。项目网络和卷由 `COMPOSE_PROJECT_NAME` 隔离。
 
-当前没有 Logflare、Vector、Kong、MinIO、RustFS、Caddy、Certbot 或独立 SMTP 容器。模板里的同名变量只是上游兼容/扩展参考，填值不会自动部署这些服务。也没有独立的 GraphQL 容器，GraphQL 依赖 PostgreSQL 扩展与现有 REST 服务。
+Caddy 使用宿主机进程，配置由 `make init` 生成。当前没有 Logflare、Vector、Kong、MinIO、RustFS、Caddy、Certbot 或独立 SMTP 容器。模板里的同名变量只是上游兼容/扩展参考，填值不会自动部署这些服务。也没有独立的 GraphQL 容器，GraphQL 依赖 PostgreSQL 扩展与现有 REST 服务。
 
 修改操作与恢复注意事项见 [环境变量说明](configuration.md) 和 [运维文档](operations.md)。查看实际服务状态用 `make ps`，排查单个服务用 `make logs SERVICE=服务名`。

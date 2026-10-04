@@ -8,3 +8,4 @@ volumes/snippets/
 __pycache__/
 *.pyc
 *.partial
+caddy/Caddyfile

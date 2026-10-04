@@ -16,17 +16,21 @@
 | `DB_SESSION_PORT` / `DB_TRANSACTION_PORT` | 仅改变宿主机端口；内部 `POSTGRES_PORT=5432` 不动 |
 | `COMPOSE_PROJECT_NAME` | 初次部署前决定；修改会选择新的 Docker 网络和命名卷，不能用来直接复制实例 |
 | `UP_TIMEOUT` | 服务启动后的健康检查等待秒数，默认 300；不限制镜像下载时间 |
-| `TUNNEL_ENABLED` | `true` 时 `make up` 一并启动 cloudflared；改回 `false` 后 `make up` 会停止 Tunnel |
-| `TUNNEL_TOKEN` | Cloudflare remotely managed tunnel token，视同密码 |
-| `TUNNEL_TRANSPORT_PROTOCOL` | `auto`、`quic` 或 `http2`；UDP 受限时尝试 `http2` |
-| `CLOUDFLARED_IMAGE` | 固定镜像标签；升级前单独验证 |
 | `DISABLE_SIGNUP` | 默认 `true`；要开放注册改为 `false` 并配置 SMTP |
-| `ENABLE_EMAIL_AUTOCONFIRM` | 默认 `false`；仅隔离的本地开发可临时启用；Tunnel 模式拒绝启用 |
+| `ENABLE_EMAIL_AUTOCONFIRM` | 默认 `false`；仅隔离的本地开发可临时启用；公网 URL 模式拒绝启用 |
 | `SMTP_HOST/PORT/USER/PASS` | 邮件服务参数；还要填写 `SMTP_ADMIN_EMAIL`、`SMTP_SENDER_NAME` |
 | `FUNCTIONS_VERIFY_JWT` | 默认 `true`；函数内部仍须判断用户身份与业务权限 |
 | `STORAGE_FILE_SIZE_LIMIT` | Supabase Storage 限制，默认 50 MiB；Nginx 也有 `client_max_body_size 50m`，更大文件需要同步调整并核对 Cloudflare 限制 |
 
 内部数据库 `db:5432/postgres` 是本封装固定的拓扑。外接普通 PostgreSQL 不是修改几个变量就可以完成：Supabase 依赖额外角色、扩展和初始化迁移。
+
+## Caddy 配置生成
+
+`make init` 同时从 `caddy/Caddyfile.example` 生成 `caddy/Caddyfile`。初次生成读取 `CADDY_API_HOST`（默认 `api.localhost`）、`CADDY_ADMIN_HOST`（默认 `admin.localhost`）、`CADDY_PORT`（默认 `8080`）以及 `PUBLIC_API_PORT` / `STUDIO_PORT`。旧 `.env` 缺少 Caddy 变量时使用默认值；不要求重新生成密钥。
+
+已有 Caddyfile 不覆盖，因此之后修改域名或端口需同步编辑该文件并 reload Caddy。文件不包含密码，Studio 沿用 Envoy 网关的 Dashboard 凭证。旧 `.env` 中遗留的 Tunnel 变量不再使用，可自行删除；项目不管理外部入口。
+
+公网校验根据 `SUPABASE_PUBLIC_URL` 是否使用非 loopback 主机名判断，不再依赖 Tunnel 开关。
 
 ## 密钥模式与轮换
 

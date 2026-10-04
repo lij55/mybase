@@ -14,7 +14,7 @@ services:
   api-gw:
     container_name: !reset null
     ports: !override
-      - '127.0.0.1:${STUDIO_PORT:-8001}:8000'
+      - '0.0.0.0:${STUDIO_PORT:-8001}:8000'
     logging: *logging
   auth:
     container_name: !reset null
@@ -60,7 +60,7 @@ services:
       api-gw:
         condition: service_healthy
     ports:
-      - '127.0.0.1:${PUBLIC_API_PORT:-8000}:8080'
+      - '0.0.0.0:${PUBLIC_API_PORT:-8000}:8080'
     volumes:
       - ./config/public-api.conf:/etc/nginx/conf.d/default.conf:ro
     healthcheck:
@@ -68,19 +68,4 @@ services:
       interval: 10s
       timeout: 3s
       retries: 3
-    logging: *logging
-  cloudflared:
-    image: ${CLOUDFLARED_IMAGE:-cloudflare/cloudflared:2026.9.0}
-    profiles: ['tunnel']
-    restart: unless-stopped
-    depends_on:
-      public-api:
-        condition: service_healthy
-    command: ['tunnel', '--no-autoupdate', 'run']
-    environment:
-      TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
-      TUNNEL_TRANSPORT_PROTOCOL: ${TUNNEL_TRANSPORT_PROTOCOL:-auto}
-    read_only: true
-    cap_drop: ['ALL']
-    security_opt: ['no-new-privileges:true']
     logging: *logging

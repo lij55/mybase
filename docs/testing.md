@@ -4,7 +4,7 @@
 
 ```bash
 make up && make test        # 启动并执行全部验收
-make unit                  # 12 项离线单元测试，无需 .env / Docker
+make unit                  # 14 项离线单元测试，无需 .env / Docker
 make integration           # 11 项集成测试，需要已启动的实例
 ```
 
