@@ -17,13 +17,90 @@ import urllib.request
 from urllib.parse import urlparse
 
 ROOT = Path(__file__).resolve().parents[1]
-SECRET_BYTES = {
-    'POSTGRES_PASSWORD': 24, 'JWT_SECRET': 32, 'DASHBOARD_PASSWORD': 24,
-    'SECRET_KEY_BASE': 48, 'REALTIME_DB_ENC_KEY': 8, 'VAULT_ENC_KEY': 16,
-    'PG_META_CRYPTO_KEY': 32, 'LOGFLARE_PUBLIC_ACCESS_TOKEN': 32,
-    'LOGFLARE_PRIVATE_ACCESS_TOKEN': 32, 'S3_PROTOCOL_ACCESS_KEY_ID': 16,
-    'S3_PROTOCOL_ACCESS_KEY_SECRET': 32, 'MINIO_ROOT_PASSWORD': 24,
-}
+SECRET_BYTES = {'POSTGRES_PASSWORD': 24,
+ 'JWT_SECRET': 32,
+ 'DASHBOARD_PASSWORD': 24,
+ 'SECRET_KEY_BASE': 48,
+ 'REALTIME_DB_ENC_KEY': 8,
+ 'VAULT_ENC_KEY': 16,
+ 'PG_META_CRYPTO_KEY': 32,
+ 'S3_PROTOCOL_ACCESS_KEY_ID': 16,
+ 'S3_PROTOCOL_ACCESS_KEY_SECRET': 32}
+
+# Runtime defaults are kept out of the generated user configuration.
+DEFAULTS = {'SUPABASE_PUBLISHABLE_KEY': '',
+ 'SUPABASE_SECRET_KEY': '',
+ 'JWT_KEYS': '',
+ 'JWT_JWKS': '',
+ 'DASHBOARD_USERNAME': 'supabase',
+ 'POSTGRES_HOST': 'db',
+ 'POSTGRES_DB': 'postgres',
+ 'POSTGRES_PORT': '5432',
+ 'POOLER_PROXY_PORT_TRANSACTION': '6543',
+ 'POOLER_DEFAULT_POOL_SIZE': '20',
+ 'POOLER_MAX_CLIENT_CONN': '100',
+ 'POOLER_TENANT_ID': 'mybase',
+ 'POOLER_DB_POOL_SIZE': '5',
+ 'STUDIO_DEFAULT_ORGANIZATION': 'Default Organization',
+ 'STUDIO_DEFAULT_PROJECT': 'Default Project',
+ 'OPENAI_API_KEY': '',
+ 'SITE_URL': 'https://my.supabase.local',
+ 'ADDITIONAL_REDIRECT_URLS': '',
+ 'JWT_EXPIRY': '3600',
+ 'DISABLE_SIGNUP': 'true',
+ 'MAILER_URLPATHS_CONFIRMATION': '/auth/v1/verify',
+ 'MAILER_URLPATHS_INVITE': '/auth/v1/verify',
+ 'MAILER_URLPATHS_RECOVERY': '/auth/v1/verify',
+ 'MAILER_URLPATHS_EMAIL_CHANGE': '/auth/v1/verify',
+ 'ENABLE_EMAIL_SIGNUP': 'true',
+ 'ENABLE_EMAIL_AUTOCONFIRM': 'false',
+ 'SMTP_ADMIN_EMAIL': 'admin@example.com',
+ 'SMTP_HOST': '',
+ 'SMTP_PORT': '587',
+ 'SMTP_USER': '',
+ 'SMTP_PASS': '',
+ 'SMTP_SENDER_NAME': 'Mybase',
+ 'ENABLE_ANONYMOUS_USERS': 'false',
+ 'ENABLE_PHONE_SIGNUP': 'false',
+ 'ENABLE_PHONE_AUTOCONFIRM': 'false',
+ 'GLOBAL_S3_BUCKET': 'stub',
+ 'REGION': 'stub',
+ 'STORAGE_TENANT_ID': 'stub',
+ 'FUNCTIONS_VERIFY_JWT': 'true',
+ 'PGRST_DB_SCHEMAS': 'public,graphql_public',
+ 'PGRST_DB_MAX_ROWS': '1000',
+ 'PGRST_DB_EXTRA_SEARCH_PATH': 'public',
+ 'API_GW_HTTP_PORT': '8000',
+ 'KONG_HTTP_PORT': '8000',
+ 'KONG_HTTPS_PORT': '8443',
+ 'ANON_KEY_ASYMMETRIC': '',
+ 'SERVICE_ROLE_KEY_ASYMMETRIC': '',
+ 'IMGPROXY_AUTO_WEBP': 'true',
+ 'COMPOSE_PROJECT_NAME': 'mybase',
+ 'PUBLIC_API_PORT': '8000',
+ 'STUDIO_PORT': '8001',
+ 'DB_SESSION_PORT': '5432',
+ 'DB_TRANSACTION_PORT': '6543',
+ 'UP_TIMEOUT': '300',
+ 'STORAGE_FILE_SIZE_LIMIT': '52428800',
+ 'CADDY_PORT': '8080',
+ 'PUBLIC_HOST': 'my.supabase.local'}
+
+def effective_env(values):
+    result = {**DEFAULTS, **values}
+    host = result['PUBLIC_HOST']
+    if not re.fullmatch(r'[a-zA-Z0-9]+(?:[.-][a-zA-Z0-9]+)*', host):
+        raise ValueError('PUBLIC_HOST 必须是域名，不带协议、端口或路径')
+    # Existing deployments without PUBLIC_HOST keep their explicit URLs.
+    if 'PUBLIC_HOST' in values or not values.get('SUPABASE_PUBLIC_URL'):
+        result['SUPABASE_PUBLIC_URL'] = f'https://api.{host}'
+        result['API_EXTERNAL_URL'] = result['SUPABASE_PUBLIC_URL'] + '/auth/v1'
+    if not values.get('SITE_URL'):
+        result['SITE_URL'] = f'https://{host}'
+    result['CADDY_API_HOST'] = f'api.{host}'
+    result['CADDY_ADMIN_HOST'] = f'admin.{host}'
+    return result
+
 
 
 def read_env(path):
@@ -32,7 +109,7 @@ def read_env(path):
         line = line.strip()
         if not line or line.startswith('#'):
             continue
-        if not re.match(r'^[A-Z][A-Z0-9_]*=', line):
+        if not re.match(r'^[A-Za-z][A-Za-z0-9_]*=', line):
             raise ValueError(f'.env 第 {number} 行必须为 KEY=value')
         key, value = line.split('=', 1)
         value = value.strip()
@@ -65,10 +142,9 @@ def jwt(secret, role):
 
 def init_caddy(root, values):
     path = root / 'caddy/Caddyfile'
-    if path.exists():
-        return
-    api = values.get('CADDY_API_HOST', 'api.localhost')
-    admin = values.get('CADDY_ADMIN_HOST', 'admin.localhost')
+    values = effective_env(values)
+    api = values['CADDY_API_HOST']
+    admin = values['CADDY_ADMIN_HOST']
     for host in (api, admin):
         if not re.fullmatch(r'[a-zA-Z0-9]+(?:[.-][a-zA-Z0-9]+)*', host):
             raise ValueError('CADDY_API_HOST / CADDY_ADMIN_HOST 必须是域名，不带协议、端口或路径')
@@ -79,12 +155,20 @@ def init_caddy(root, values):
     if len(set(ports)) != 3 or any(p < 1024 or p > 65535 for p in ports):
         raise ValueError('Caddy/API/Studio 端口必须不同且位于 1024..65535')
     template = (root / 'caddy/Caddyfile.example').read_text()
+    if path.exists():
+        # Refresh only files that still exactly match our generated layout.
+        pattern = re.escape(template)
+        for key in ('CADDY_API_HOST', 'CADDY_ADMIN_HOST', 'CADDY_PORT', 'PUBLIC_API_PORT', 'STUDIO_PORT'):
+            pattern = pattern.replace(re.escape('@@' + key + '@@'), r'[a-zA-Z0-9.-]+' if 'HOST' in key else r'[0-9]+')
+        existing = path.read_text().replace('existing caddy/Caddyfile is never overwritten.',
+                                            'unmodified generated files are refreshed; custom files are preserved.')
+        if not re.fullmatch(pattern, existing):
+            return
     for key, value in zip(('CADDY_API_HOST', 'CADDY_ADMIN_HOST', 'CADDY_PORT', 'PUBLIC_API_PORT', 'STUDIO_PORT'),
                           (api, admin, *ports)):
         template = template.replace('@@' + key + '@@', str(value))
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open('x') as handle:
-        handle.write(template)
+    path.write_text(template)
 
 
 def init(root=ROOT):
@@ -118,8 +202,8 @@ def init(root=ROOT):
     print('配置已就绪：.env（密钥不显示，已有非空值不覆盖）')
     values = read_env(path)
     init_caddy(root, values)
-    print('Caddy 配置已就绪：caddy/Caddyfile（已有文件不覆盖）')
-    return values
+    print('Caddy 配置已就绪：caddy/Caddyfile（自动同步生成配置，手工修改的文件保留）')
+    return effective_env(values)
 
 
 def validate(v):
@@ -174,6 +258,7 @@ def validate(v):
 def compose(v, args, **kwargs):
     # .env is authoritative; prevent exported shell variables overriding it.
     env = {k: value for k, value in os.environ.items() if k not in v and not k.startswith('COMPOSE_')}
+    env.update(v)
     cmd = ['docker', 'compose', '--project-directory', str(ROOT), '--env-file', str(ROOT / '.env'),
            '-p', v['COMPOSE_PROJECT_NAME'], '-f', str(ROOT / 'docker-compose.yml'), '-f', str(ROOT / 'compose.override.yml')]
     return subprocess.run(cmd + args, env=env, check=True, **kwargs)
@@ -247,7 +332,7 @@ def main():
     if args.action in ('init', 'up', 'restart'):
         v = init()
     else:
-        v = read_env(ROOT / '.env')
+        v = effective_env(read_env(ROOT / '.env'))
     if args.action == 'init':
         return
     # Permit stop/diagnostics even after an invalid manual edit.

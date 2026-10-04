@@ -16,7 +16,7 @@ import manage
 
 class Instance:
     def __init__(self):
-        self.values = manage.read_env(manage.ROOT / '.env')
+        self.values = manage.effective_env(manage.read_env(manage.ROOT / '.env'))
         manage.validate(self.values)
         self.base = f"http://127.0.0.1:{self.values['PUBLIC_API_PORT']}"
         self.opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))

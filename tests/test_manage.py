@@ -5,6 +5,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 import manage
@@ -44,17 +45,56 @@ class ConfigurationTests(unittest.TestCase):
     def test_caddy_custom_hosts_ports_and_invalid_hosts(self):
         path = self.root / 'caddy/Caddyfile'
         path.unlink()
-        self.values.update(CADDY_API_HOST='api.example.com', CADDY_ADMIN_HOST='admin.example.com', PUBLIC_API_PORT='9000')
+        self.values.update(PUBLIC_HOST='example.com', PUBLIC_API_PORT='9000')
         manage.init_caddy(self.root, self.values)
         self.assertIn('@api host api.example.com', path.read_text())
         self.assertIn('127.0.0.1:9000', path.read_text())
         path.unlink()
-        self.values['CADDY_ADMIN_HOST'] = 'api.example.com'
+        self.values['PUBLIC_HOST'] = 'evil.example { respond 200 }'
         with self.assertRaises(ValueError):
             manage.init_caddy(self.root, self.values)
-        self.values['CADDY_ADMIN_HOST'] = 'evil.example { respond 200 }'
-        with self.assertRaises(ValueError):
-            manage.init_caddy(self.root, self.values)
+
+    def test_minimal_env_and_shared_domain(self):
+        raw = manage.read_env(self.root / '.env')
+        self.assertEqual(set(raw), {'PUBLIC_HOST', *manage.SECRET_BYTES, 'ANON_KEY', 'SERVICE_ROLE_KEY'})
+        self.assertEqual(self.values['SUPABASE_PUBLIC_URL'], 'https://api.my.supabase.local')
+        self.assertEqual(self.values['API_EXTERNAL_URL'], 'https://api.my.supabase.local/auth/v1')
+        text = (self.root / 'caddy/Caddyfile').read_text()
+        self.assertIn('@api host api.my.supabase.local', text)
+        self.assertIn('@admin host admin.my.supabase.local', text)
+
+    def test_domain_change_refreshes_generated_caddy_and_urls(self):
+        path = self.root / '.env'
+        path.write_text(path.read_text().replace('PUBLIC_HOST=my.supabase.local', 'PUBLIC_HOST=example.com'))
+        with contextlib.redirect_stdout(io.StringIO()):
+            values = manage.init(self.root)
+        self.assertEqual(values['SUPABASE_PUBLIC_URL'], 'https://api.example.com')
+        self.assertEqual(values['API_EXTERNAL_URL'], 'https://api.example.com/auth/v1')
+        self.assertIn('@admin host admin.example.com', (self.root / 'caddy/Caddyfile').read_text())
+        manage.validate(values)
+
+    def test_public_host_overrides_stale_urls(self):
+        values = manage.effective_env({'PUBLIC_HOST': 'example.com',
+                                      'SUPABASE_PUBLIC_URL': 'http://localhost:8000',
+                                      'API_EXTERNAL_URL': 'http://localhost:8000/auth/v1'})
+        self.assertEqual(values['SUPABASE_PUBLIC_URL'], 'https://api.example.com')
+        self.assertEqual(values['API_EXTERNAL_URL'], 'https://api.example.com/auth/v1')
+        with mock.patch.object(manage.subprocess, 'run') as run:
+            manage.compose(values, ['config'])
+        self.assertEqual(run.call_args.kwargs['env']['SUPABASE_PUBLIC_URL'], values['SUPABASE_PUBLIC_URL'])
+
+    def test_legacy_urls_and_caddy_upgrade(self):
+        values = manage.effective_env({'SUPABASE_PUBLIC_URL': 'http://localhost:8000',
+                                      'API_EXTERNAL_URL': 'http://localhost:8000/auth/v1'})
+        self.assertEqual(values['SUPABASE_PUBLIC_URL'], 'http://localhost:8000')
+        path = self.root / 'caddy/Caddyfile'
+        path.write_text(path.read_text().replace(
+            'unmodified generated files are refreshed; custom files are preserved.',
+            'existing caddy/Caddyfile is never overwritten.').replace(
+            'api.my.supabase.local', 'api.localhost').replace(
+            'admin.my.supabase.local', 'admin.localhost'))
+        manage.init_caddy(self.root, self.values)
+        self.assertIn('@api host api.my.supabase.local', path.read_text())
 
     def test_wrong_jwt_secret_rejected(self):
         self.values['JWT_SECRET'] = 'a' * 64

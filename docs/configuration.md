@@ -1,6 +1,6 @@
 # 环境变量
 
-`.env.example` 是完整模板，`.env` 是本地真实配置。`make init` 只补全空密钥，非空内容保留；数据库已经初始化后缺失密钥会拒绝启动，防止意外生成不匹配的新密钥。`.env` 不能当作 shell 脚本 `source`。
+`.env.example` 是最小模板，仅包含 `PUBLIC_HOST` 和实际使用的密钥；端口、内部数据库、Auth 等参数使用代码和 Compose 中的默认值，可按需追加到 `.env`。`.env` 是本地真实配置。`make init` 只补全空密钥，非空内容保留；数据库已经初始化后缺失密钥会拒绝启动，防止意外生成不匹配的新密钥。`.env` 不能当作 shell 脚本 `source`。
 
 为使 Python 校验与 Compose 读取一致，本封装采用简单的 dotenv 子集：每行 `KEY=value`；注释单独成行；含 `$` 或 `#` 的密码用单引号包裹，如 `SMTP_PASS='abc$def#123'`。不支持变量插值、多行值、嵌套引号或反斜线转义。脚本避免 shell 导出的同名环境变量覆盖 `.env`。
 
@@ -8,11 +8,11 @@
 
 | 变量 | 说明 |
 | --- | --- |
-| `SUPABASE_PUBLIC_URL` | SDK 的 API 根地址；本地 `http://localhost:8000`；公网 `https://api.example.com` |
-| `API_EXTERNAL_URL` | **此固定版本**要求 `https://api.example.com/auth/v1`，不要套用旧版不带路径的示例 |
-| `SITE_URL` | 前端站点根地址，如 `https://app.example.com` |
+| `PUBLIC_HOST` | 统一基础域名，默认 `my.supabase.local`；API 为 `api.` 子域名，管理入口为 `admin.` 子域名 |
+| 自动派生 URL | SDK 根地址 `https://api.<PUBLIC_HOST>`；Auth 外部地址为该地址加 `/auth/v1`，无需在 `.env` 重复填写 |
+| `SITE_URL` | 前端站点根地址，默认 `https://<PUBLIC_HOST>`；部署业务前端时按需指定 |
 | `ADDITIONAL_REDIRECT_URLS` | 逗号分隔的允许回调 URL，如 `https://app.example.com/auth/callback`；避免过宽通配符 |
-| `PUBLIC_API_PORT` / `STUDIO_PORT` | 本机 API / Studio 端口；改 API 端口也要同步上面两个 API URL |
+| `PUBLIC_API_PORT` / `STUDIO_PORT` | 本机 API / Studio 端口，默认 8000 / 8001；不影响外部 URL |
 | `DB_SESSION_PORT` / `DB_TRANSACTION_PORT` | 仅改变宿主机端口；内部 `POSTGRES_PORT=5432` 不动 |
 | `COMPOSE_PROJECT_NAME` | 初次部署前决定；修改会选择新的 Docker 网络和命名卷，不能用来直接复制实例 |
 | `UP_TIMEOUT` | 服务启动后的健康检查等待秒数，默认 300；不限制镜像下载时间 |
@@ -26,9 +26,13 @@
 
 ## Caddy 配置生成
 
-`make init` 同时从 `caddy/Caddyfile.example` 生成 `caddy/Caddyfile`。初次生成读取 `CADDY_API_HOST`（默认 `api.localhost`）、`CADDY_ADMIN_HOST`（默认 `admin.localhost`）、`CADDY_PORT`（默认 `8080`）以及 `PUBLIC_API_PORT` / `STUDIO_PORT`。旧 `.env` 缺少 Caddy 变量时使用默认值；不要求重新生成密钥。
+`make init` 从 `caddy/Caddyfile.example` 生成 `caddy/Caddyfile`，域名由 `PUBLIC_HOST` 派生，默认 `api.my.supabase.local` / `admin.my.supabase.local`。可按需追加 `CADDY_PORT`（默认 `8080`）、`PUBLIC_API_PORT`（默认 `8000`）、`STUDIO_PORT`（默认 `8001`）。
 
-已有 Caddyfile 不覆盖，因此之后修改域名或端口需同步编辑该文件并 reload Caddy。文件不包含密码，Studio 沿用 Envoy 网关的 Dashboard 凭证。旧 `.env` 中遗留的 Tunnel 变量不再使用，可自行删除；项目不管理外部入口。
+修改 `PUBLIC_HOST` 或端口后运行 `make init` / `make up`，仍符合生成模板的 Caddyfile 会自动同步；手工修改的 Caddyfile 保留，需自行更新。随后 reload Caddy。文件不包含密码，Studio 沿用 Envoy 的 Dashboard 凭证，默认用户名 `supabase`。
+
+旧 `.env` 未指定 `PUBLIC_HOST` 时保留显式 API URL；迁移时添加 `PUBLIC_HOST`，删除旧 `SUPABASE_PUBLIC_URL`、`API_EXTERNAL_URL`、`CADDY_API_HOST` 和 `CADDY_ADMIN_HOST`，避免直接使用 Compose 时沿用旧 URL。已有密钥必须保留。未启用的 Logflare、MinIO、Kong 等变量不再生成，也不再要求备用密钥。
+
+API 域名根路径 `/` 返回 404 是 API 与管理界面隔离的预期行为。使用 `/healthz` 或 `/auth/v1/health` 检查 API；管理界面从 `admin.<PUBLIC_HOST>` 访问。
 
 公网校验根据 `SUPABASE_PUBLIC_URL` 是否使用非 loopback 主机名判断，不再依赖 Tunnel 开关。
 
@@ -44,4 +48,4 @@
 
 `make restart` 与 `make up` 一样通过 Compose 应用配置变化；单纯 `docker compose restart` 不会重新加载容器环境变量。修改挂载配置文件而 Compose 未重建容器时，需明确重启相关容器。
 
-模板保留部分上游高级参数供参考；`API_GW_HTTP_PORT` / `KONG_*` 已被本地 override 的端口规则覆盖，宿主机入口请只修改 `PUBLIC_API_PORT` / `STUDIO_PORT`。模板注释里的其他可选上游组合文件未打包，不能直接照抄为命令运行。
+高级参数可按需追加到 `.env`；`API_GW_HTTP_PORT` / `KONG_*` 已被本地 override 的端口规则覆盖，宿主机入口请只修改 `PUBLIC_API_PORT` / `STUDIO_PORT`。其他可选上游组合文件未打包。

@@ -19,13 +19,12 @@ Supabase API 本身已有 `/auth/v1`、`/rest/v1` 等 prefix。同域名也可�
 make init
 ```
 
-生成的 Caddyfile 默认监听 `127.0.0.1:8080`，域名为 `api.localhost` / `admin.localhost`。编辑 `caddy/Caddyfile`，把两个 Host 换成真实域名。初次生成也可以在 `.env` 中预先设置 `CADDY_API_HOST`、`CADDY_ADMIN_HOST`、`CADDY_PORT`；已有文件始终保留，后续改 `.env` 不会重新渲染 Caddyfile。
+生成的 Caddyfile 默认监听 `127.0.0.1:8080`，域名为 `api.my.supabase.local` / `admin.my.supabase.local`。只需修改 `.env` 的 `PUBLIC_HOST`，Caddy 与 Supabase 自动使用同一基础域名。运行 `make init` / `make up` 时会同步未被手工修改的 Caddyfile；手工修改的配置需自行维护。
 
 配置 `.env`：
 
 ```dotenv
-SUPABASE_PUBLIC_URL=https://api.example.com
-API_EXTERNAL_URL=https://api.example.com/auth/v1
+PUBLIC_HOST=example.com
 SITE_URL=https://app.example.com
 ADDITIONAL_REDIRECT_URLS=https://app.example.com/auth/callback
 ```
@@ -41,7 +40,7 @@ caddy run --config caddy/Caddyfile --adapter caddyfile
 caddy reload --config caddy/Caddyfile --adapter caddyfile
 ```
 
-Caddy 安装和进程管理独立于 `make up`。后端端口来自初次生成时的 `PUBLIC_API_PORT` / `STUDIO_PORT`，改端口后须同步编辑 Caddyfile。默认 HTTP listener 用于外部已终止 TLS 的入口，入口须保留原始 Host；不匹配的 Host 返回 404。不要把此 HTTP listener 直接当作公网 HTTPS 服务。
+Caddy 安装和进程管理独立于 `make up`。后端端口来自初次生成时的 `PUBLIC_API_PORT` / `STUDIO_PORT`，改端口后运行 `make init` 同步生成配置，再 reload Caddy。默认 HTTP listener 用于外部已终止 TLS 的入口，入口须保留原始 Host；不匹配的 Host 返回 404。不要把此 HTTP listener 直接当作公网 HTTPS 服务。
 
 此配置使用宿主机 loopback 地址。若 Caddy 放入普通 bridge 网络容器，需要调整网络与 upstream；容器内的 `127.0.0.1` 并非宿主机。
 
@@ -58,13 +57,17 @@ admin.example.com {
 
 ## 验收
 
-启动 Caddy 后验证 Host 路由（默认配置使用 `api.localhost` / `admin.localhost`）：
+完整的配置读取、认证及安全边界命令见 [README 手动 smoke 验证](../README.md#手动-smoke-验证)。启动 Caddy 后验证 Host 路由（默认配置使用 `api.my.supabase.local` / `admin.my.supabase.local`）：
 
 ```bash
-curl -i -H 'Host: api.example.com' http://127.0.0.1:8080/healthz  # 200
-curl -i -H 'Host: api.example.com' http://127.0.0.1:8080/         # 404
-curl -i -H 'Host: api.example.com' http://127.0.0.1:8080/pg/      # 404
-curl -i -H 'Host: admin.example.com' http://127.0.0.1:8080/       # 401 Basic Auth
+curl -i -H 'Host: api.my.supabase.local' http://127.0.0.1:8080/healthz  # 200
+# 先按 README「手动 smoke 验证」读取 ANON_KEY
+curl -i -H 'Host: api.my.supabase.local' \
+  -H "apikey: ${ANON_KEY}" -H "Authorization: Bearer ${ANON_KEY}" \
+  http://127.0.0.1:8080/auth/v1/health                           # 200
+curl -i -H 'Host: api.my.supabase.local' http://127.0.0.1:8080/         # 404
+curl -i -H 'Host: api.my.supabase.local' http://127.0.0.1:8080/pg/      # 404
+curl -i -H 'Host: admin.my.supabase.local' http://127.0.0.1:8080/       # 401 Basic Auth
 curl -i -H 'Host: unknown.example.com' http://127.0.0.1:8080/     # 404
 ```
 
