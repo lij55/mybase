@@ -1,5 +1,7 @@
 # 使用方式
 
+多个 App 共用当前实例时，采用每 App 一个 schema、显式权限/RLS 和独立迁移，详见[多 App 共用与隔离](multi-app.md)。
+
 ## Studio 与第一个业务表
 
 访问 `http://localhost:8001`，使用 `.env` 的 Dashboard 用户名密码进入。Studio 是项目级管理工具，管理员可以查看和修改业务数据；业务用户使用前端的 Supabase Auth 登录，不使用 Studio 账号。

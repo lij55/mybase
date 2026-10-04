@@ -134,6 +134,8 @@ flowchart LR
 - [当前实例功能与示例](docs/features.md)：数据库、认证、文件、实时通信、函数，以及需额外启用的能力。
 - [部署与 Caddy](docs/deployment.md)：云主机、域名、回调、邮件和公网验收。
 - [环境变量说明](docs/configuration.md)：默认值、密钥模式和配置修改边界。
+- [三个可运行示例应用](demoapp/README.md)：授权后台、Todo、Quick Notes、Docker Compose 与 Traefik。
+- [多 App 共用与隔离](docs/multi-app.md)：共用登录、独立 schema、建表与 RLS 示例、迁移边界。
 - [前端与 SQL 使用](docs/usage.md)：Auth、RLS、Storage、Realtime、Functions 和报表连接。
 - [运维、备份与恢复](docs/operations.md)：冷备份、恢复演练、升级、监控和迁移。
 - [常见问题及替代方案](docs/troubleshooting.md)：故障排查与部署方案取舍。
