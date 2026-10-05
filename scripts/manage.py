@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Small deployment wrapper; uses Node crypto for ES256 keys. Never executes .env as shell code."""
+"""Small deployment wrapper; uses Python and OpenSSL for ES256 keys. Never executes .env as shell code."""
 import argparse
+import auth_keys as auth_credentials
 import hashlib
 import json
 import ipaddress
@@ -134,15 +135,11 @@ AUTH_FIELDS = ('SUPABASE_PUBLISHABLE_KEY', 'SUPABASE_SECRET_KEY',
 
 
 def auth_keys(action, values=None):
-    try:
-        result = subprocess.run(['node', str(ROOT / 'scripts/auth_keys.cjs'), action],
-                                input=json.dumps(values or {}), text=True,
-                                capture_output=True, check=True)
-    except FileNotFoundError:
-        raise ValueError('密钥初始化与校验需要 Node.js >= 18') from None
-    except subprocess.CalledProcessError:
-        raise ValueError('ES256 密钥、签名或 API key 配置无效') from None
-    return json.loads(result.stdout) if action == 'generate' else None
+    if action == 'generate':
+        return auth_credentials.generate()
+    if action == 'validate':
+        return auth_credentials.validate(values or {})
+    raise ValueError(f'未知密钥操作：{action}')
 
 
 def init_caddy(root, values):

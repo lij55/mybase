@@ -131,6 +131,22 @@ class ConfigurationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, '签名'):
             manage.validate(self.values)
 
+    def test_auth_keys_without_node(self):
+        with mock.patch.object(manage.subprocess, 'run', wraps=manage.subprocess.run) as run:
+            values = manage.auth_keys('generate')
+            manage.auth_keys('validate', values)
+        self.assertTrue(run.call_args_list)
+        self.assertTrue(all(call.args[0][0] == 'openssl' for call in run.call_args_list))
+
+    def test_tampered_signature_and_api_key_rejected(self):
+        for field in ('ANON_KEY_ASYMMETRIC', 'SUPABASE_SECRET_KEY'):
+            values = dict(self.values)
+            value = values[field]
+            index = value.rfind('.') + 1 if '.' in value else len(value) - 1
+            values[field] = value[:index] + ('A' if value[index] != 'A' else 'B') + value[index + 1:]
+            with self.assertRaisesRegex(ValueError, '签名'):
+                manage.auth_keys('validate', values)
+
     def test_mismatched_jwks_rejected(self):
         other = manage.auth_keys('generate')
         self.values['JWT_JWKS'] = other['JWT_JWKS']

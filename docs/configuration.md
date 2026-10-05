@@ -38,7 +38,7 @@ API 域名根路径 `/` 返回 404 是 API 与管理界面隔离的预期行为�
 
 ## 密钥模式与轮换
 
-新环境使用 **opaque API key + ES256**：浏览器使用 `SUPABASE_PUBLISHABLE_KEY`（`sb_publishable_...`），可信服务端使用 `SUPABASE_SECRET_KEY`（`sb_secret_...`）。`make init` 需要 Node.js >= 18，使用内置 crypto 生成 P-256 密钥，无 npm 依赖。根 `.env` 不再生成旧版 `ANON_KEY` / `SERVICE_ROLE_KEY`。
+新环境使用 **opaque API key + ES256**：浏览器使用 `SUPABASE_PUBLISHABLE_KEY`（`sb_publishable_...`），可信服务端使用 `SUPABASE_SECRET_KEY`（`sb_secret_...`）。`make init` 使用 Python 标准库调用系统 OpenSSL（1.1.1+）生成 P-256 密钥，无需 Node.js 或第三方 Python 库；可用 `openssl version` 检查是否安装。根 `.env` 不再生成旧版 `ANON_KEY` / `SERVICE_ROLE_KEY`。
 
 `JWT_KEYS` 含 ES256 私钥，仅传给 Auth；`JWT_JWKS` 仅含公钥，传给 PostgREST、Realtime、Storage 和 Functions。Auth 签发的用户 access token 默认一小时。网关将 opaque key 转为内部 `ANON_KEY_ASYMMETRIC` / `SERVICE_ROLE_KEY_ASYMMETRIC` JWT（五年有效），保留请求中的用户 JWT。内部 JWT 不用于前端配置。`JWT_SECRET` 保留供数据库初始化、Supavisor 和内部管理服务使用，不负责新用户令牌签名。Realtime 管理接口在最新版仍使用内部 HS256；容器通过原生 `/healthcheck` 检查进程存活，`make smoke` 另外验证公开入口的 WebSocket 握手与 publishable key，`make integration` 验证 ES256 用户订阅、Broadcast、Presence 和数据库事件。无需额外生成 HS256 健康检查令牌。
 

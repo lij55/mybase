@@ -4,15 +4,24 @@
 
 ## 快速开始
 
-需要 Docker Engine、Docker Compose **2.24.4+**、GNU Make、Python **3.11+**，当前用户须有 Docker 权限。建议从 4 核、8 GB RAM、80 GB SSD 起步，并根据实际负载评估容量。
+需要 OpenSSL **1.1.1+**、Docker Engine、Docker Compose **2.24.4+**、GNU Make、Python **3.11+**，当前用户须有 Docker 权限。建议从 4 核、8 GB RAM、80 GB SSD 起步，并根据实际负载评估容量。
 
-初始化与配置校验需要 Node.js >= 18（使用内置 crypto，无 npm 依赖）。新环境使用 `sb_publishable_` / `sb_secret_` API key 和 ES256 用户 JWT。
+初始化与配置校验使用 Python 标准库和系统 `openssl` 命令，无需 Node.js 或第三方 Python 库。新环境使用 `sb_publishable_` / `sb_secret_` API key 和 ES256 用户 JWT。
 
 ```bash
+openssl version           # 确认已安装 OpenSSL
 make up
 ```
 
 第一次自动从 `.env.example` 创建权限 `0600` 的 `.env` 并生成随机密钥；之后不会覆盖已有非空变量。也可以先运行 `make init`，编辑 `.env`，再 `make up`。同时生成 `caddy/Caddyfile`，未被手工修改的生成配置会自动同步。默认关闭新用户注册。首次下载镜像需要时间和可访问镜像仓库的网络。
+
+重置 Supabase Auth 用户密码（Admin、Todo、Notes 共用账号）：在 Studio 的 Authentication → Users 查看用户 UUID，然后执行：
+
+```bash
+python3 scripts/reset_auth_password.py <用户UUID>
+```
+
+脚本读取根 `.env` 的服务端管理密钥和本机 API 端口，交互输入新密码及确认（12–128 字符），无需旧密码或 SMTP。可用 `--env-file /path/to/.env` 指定配置。仅修改该用户密码，保留 UUID 与应用授权；失败返回非零退出码。
 
 | 入口 | 默认地址 | 用途 |
 | --- | --- | --- |
@@ -108,7 +117,7 @@ curl --noproxy '*' -i -H 'Host: unknown.invalid' "${CADDY_BASE}/"
 make up && make test
 ```
 
-`make test` 顺序运行离线单元测试和真实实例集成测试，覆盖 Auth 会话、REST CRUD/RLS、RPC、Storage 私有文件与签名下载、Realtime 事件/广播/Presence、Edge Functions、Studio 和两种 SQL 连接池。任何断言、服务连接或资源清理失败均返回非零退出码；服务未启动不会跳过集成测试。只需原有 Python 标准库及 Docker，无需安装 SDK 或宿主机 psql。
+`make test` 顺序运行离线单元测试和真实实例集成测试，覆盖 Auth 会话、REST CRUD/RLS、RPC、Storage 私有文件与签名下载、Realtime 事件/广播/Presence、Edge Functions、Studio 和两种 SQL 连接池。任何断言、服务连接或资源清理失败均返回非零退出码；服务未启动不会跳过集成测试。只需上述 Python 环境及 Docker，无需安装 SDK 或宿主机 psql。
 
 集成测试创建随机命名的临时用户、表、函数、bucket 和策略，正常结束或断言失败后逐项清理。SQL 连接池使用现有数据库镜像的临时客户端，经 Linux host 网络验证实际宿主机端口。未启用的 GraphQL 扩展及未配置的 SMTP、OAuth、公网 HTTPS 不属于通过范围。完整覆盖和运行说明见[测试说明](docs/testing.md)。
 

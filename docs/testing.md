@@ -10,7 +10,7 @@ make integration           # 11 项集成测试，需要已启动的实例
 
 `make test` 顺序执行 unit 与 integration，即使使用 `make -j test` 也不会同时运行两阶段。任一阶段失败返回非零退出码，停止后续阶段。服务未启动、缺少 .env、权限不足和清理失败都视为失败，不会静默跳过。逐个用例显示 `ok` / `FAIL` / `ERROR`。
 
-依赖沿用项目的 Python 3.11+、Node.js 18+、Docker Compose 与 Linux 环境，不下载测试 SDK。请求直接访问 `.env` 配置的本机端口，不使用机器 HTTP 代理。连接池测试以现有数据库镜像启动临时 `psql` 容器，使用 host 网络连接 `DB_SESSION_PORT` / `DB_TRANSACTION_PORT`；密码通过环境传入，不放进命令行参数。
+依赖沿用项目的 Python 3.11+、OpenSSL 1.1.1+、Docker Compose 与 Linux 环境，不下载测试 SDK。请求直接访问 `.env` 配置的本机端口，不使用机器 HTTP 代理。连接池测试以现有数据库镜像启动临时 `psql` 容器，使用 host 网络连接 `DB_SESSION_PORT` / `DB_TRANSACTION_PORT`；密码通过环境传入，不放进命令行参数。
 
 ## 覆盖范围
 
