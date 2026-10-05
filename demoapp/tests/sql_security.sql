@@ -1,4 +1,15 @@
--- ONLY after the fixtures and all three migrations in a disposable database.
+-- ONLY after the fixtures, prepare script and migrations in a disposable database.
+do $$ begin
+  if not exists (select 1 from pg_roles where rolname = 'app_authorizer'
+    and rolcanlogin and rolinherit and not rolsuper and not rolcreatedb
+    and not rolcreaterole and not rolreplication and not rolbypassrls) then
+    raise exception 'Prepared authorizer must be a restricted login';
+  end if;
+  if not exists (select 1 from pg_authid where rolname = 'app_authorizer'
+    and rolpassword is not null) then
+    raise exception 'Prepared authorizer password missing';
+  end if;
+end $$;
 insert into app_access.memberships values
   ('app_todo', '11111111-1111-4111-8111-111111111111'),
   ('app_notes', '22222222-2222-4222-8222-222222222222');

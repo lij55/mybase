@@ -5,6 +5,7 @@ import base64
 import hashlib
 import hmac
 import json
+import ipaddress
 import os
 from pathlib import Path
 import re
@@ -84,6 +85,7 @@ DEFAULTS = {'SUPABASE_PUBLISHABLE_KEY': '',
  'UP_TIMEOUT': '300',
  'STORAGE_FILE_SIZE_LIMIT': '52428800',
  'CADDY_PORT': '8080',
+ 'CADDY_BIND': '127.0.0.1',
  'PUBLIC_HOST': 'my.supabase.local'}
 
 def effective_env(values):
@@ -143,6 +145,7 @@ def jwt(secret, role):
 def init_caddy(root, values):
     path = root / 'caddy/Caddyfile'
     values = effective_env(values)
+    bind = str(ipaddress.IPv4Address(values['CADDY_BIND']))
     api = values['CADDY_API_HOST']
     admin = values['CADDY_ADMIN_HOST']
     for host in (api, admin):
@@ -160,10 +163,12 @@ def init_caddy(root, values):
         pattern = re.escape(template)
         for key in ('CADDY_API_HOST', 'CADDY_ADMIN_HOST', 'CADDY_PORT', 'PUBLIC_API_PORT', 'STUDIO_PORT'):
             pattern = pattern.replace(re.escape('@@' + key + '@@'), r'[a-zA-Z0-9.-]+' if 'HOST' in key else r'[0-9]+')
+        pattern = pattern.replace(re.escape('@@CADDY_BIND@@'), r'[0-9.]+')
         existing = path.read_text().replace('existing caddy/Caddyfile is never overwritten.',
                                             'unmodified generated files are refreshed; custom files are preserved.')
         if not re.fullmatch(pattern, existing):
             return
+    template = template.replace('@@CADDY_BIND@@', bind)
     for key, value in zip(('CADDY_API_HOST', 'CADDY_ADMIN_HOST', 'CADDY_PORT', 'PUBLIC_API_PORT', 'STUDIO_PORT'),
                           (api, admin, *ports)):
         template = template.replace('@@' + key + '@@', str(value))

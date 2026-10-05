@@ -11,8 +11,8 @@ sys.path.insert(0, str(ROOT / 'scripts'))
 import manage
 
 
-def main():
-    values = manage.effective_env(manage.read_env(ROOT / '.env'))
+def create_admin(values):
+    """Interactively create an Auth user and return its UUID."""
     email = input('初始管理员邮箱：').strip()
     password = getpass.getpass('初始密码（至少 12 字符）：')
     if '@' not in email or not 12 <= len(password) <= 128:
@@ -34,8 +34,14 @@ def main():
     except URLError:
         raise SystemExit('无法连接本机 Supabase，请先 make up')
     user = result.get('user', result)
+    return user['id']
+
+
+def main():
+    values = manage.effective_env(manage.read_env(ROOT / '.env'))
+    user_id = create_admin(values)
     print('已创建账号；将以下 UUID 填入 demoapp/.env 的 ADMIN_USER_IDS：')
-    print(user['id'])
+    print(user_id)
 
 
 if __name__ == '__main__':

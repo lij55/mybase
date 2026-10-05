@@ -74,3 +74,11 @@ curl -i -H 'Host: unknown.example.com' http://127.0.0.1:8080/     # 404
 管理界面使用 `.env` 的 `DASHBOARD_USERNAME` / `DASHBOARD_PASSWORD`。外部入口配置完成后，另行验证 HTTPS、Studio 登录、Auth 回调、文件上传和 Realtime WebSocket。Caddy reverse_proxy 保留请求路径并支持 WebSocket 升级。业务 API 不应使用交互式登录门禁或共享缓存。
 
 数据库的 5432 / 6543 仍只监听本机；此 Caddyfile 只路由 HTTP/WebSocket。
+
+要让宿主机 Caddy 监听所有 IPv4 网卡，在根 `.env` 添加 `CADDY_BIND=0.0.0.0`，然后运行 `make init`。生成配置使用 `bind 0.0.0.0`，默认端口仍为 `8080`；反向代理上游保持 `127.0.0.1`。手工修改过的 Caddyfile 需自行修改 `bind`。启动命令：
+
+```bash
+caddy run --config caddy/Caddyfile --adapter caddyfile
+```
+
+已有 Caddy 进程时使用 `caddy reload --config caddy/Caddyfile --adapter caddyfile`。访问时仍需使用配置的 API / Studio 域名，直接用 IP 的 Host 会返回 404。

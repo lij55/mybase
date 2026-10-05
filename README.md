@@ -143,3 +143,11 @@ flowchart LR
 - [上游版本来源](UPSTREAM.md)：固定 commit 和原许可证。
 
 配置文件不要提交 `.env`，不要运行 `docker compose down -v` 或删除 `volumes/db/data`。`make down` 不删除数据，但磁盘丢失仍会丢数据，请保存异地备份。
+
+要让宿主机 Caddy 监听所有 IPv4 网卡，在根 `.env` 添加 `CADDY_BIND=0.0.0.0`，然后运行 `make init`。生成配置使用 `bind 0.0.0.0`，默认端口仍为 `8080`；反向代理上游保持 `127.0.0.1`。手工修改过的 Caddyfile 需自行修改 `bind`。启动命令：
+
+```bash
+caddy run --config caddy/Caddyfile --adapter caddyfile
+```
+
+已有 Caddy 进程时使用 `caddy reload --config caddy/Caddyfile --adapter caddyfile`。访问时仍需使用配置的 API / Studio 域名，直接用 IP 的 Host 会返回 404。

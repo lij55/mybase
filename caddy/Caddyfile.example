@@ -3,7 +3,7 @@
 # Preserve the original Host header when forwarding to this listener.
 # For direct public HTTPS, see docs/deployment.md.
 http://:@@CADDY_PORT@@ {
-	bind 127.0.0.1
+	bind @@CADDY_BIND@@
 	header -Server
 
 	@api host @@CADDY_API_HOST@@

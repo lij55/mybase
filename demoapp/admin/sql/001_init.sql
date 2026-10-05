@@ -35,7 +35,8 @@ $$;
 revoke all on function app_access.can_access_app(text) from public, anon;
 grant execute on function app_access.can_access_app(text) to authenticated;
 
--- Capability role, intentionally NOLOGIN. Grant to a separate login below.
+-- Prepared login from 000_prepare.sql; fallback NOLOGIN for standalone schema setup.
+-- Do not overwrite LOGIN/password when the role already exists.
 do $$ begin
   if not exists (select 1 from pg_roles where rolname = 'app_authorizer') then
     create role app_authorizer nologin;

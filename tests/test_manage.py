@@ -42,6 +42,20 @@ class ConfigurationTests(unittest.TestCase):
             manage.init(self.root)
         self.assertEqual(path.read_text(), '# custom config\n')
 
+    def test_caddy_bind_refreshes_legacy_and_generated_configs(self):
+        path = self.root / 'caddy/Caddyfile'
+        self.assertIn('bind 127.0.0.1', path.read_text())
+        self.values['CADDY_BIND'] = '0.0.0.0'
+        manage.init_caddy(self.root, self.values)
+        self.assertIn('bind 0.0.0.0', path.read_text())
+        self.assertIn('reverse_proxy 127.0.0.1:8000', path.read_text())
+        self.values['CADDY_BIND'] = '127.0.0.1'
+        manage.init_caddy(self.root, self.values)
+        self.assertIn('bind 127.0.0.1', path.read_text())
+        self.values['CADDY_BIND'] = '0.0.0.0 { respond 200 }'
+        with self.assertRaises(ValueError):
+            manage.init_caddy(self.root, self.values)
+
     def test_caddy_custom_hosts_ports_and_invalid_hosts(self):
         path = self.root / 'caddy/Caddyfile'
         path.unlink()

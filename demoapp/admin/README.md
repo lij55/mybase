@@ -6,7 +6,7 @@
 
 ## SQL
 
-统一命名的 [sql/001_init.sql](sql/001_init.sql) 由管理员手动执行，容器不会自动迁移。最先执行，创建共享授权结构。后续变更按 `sql/002_<用途>.sql` 递增。
+先执行 [sql/000_prepare.sql](sql/000_prepare.sql)，创建带密码的 PostgreSQL 登录账号 `app_authorizer`；密码直接保存在 SQL 中，部署前修改并同步到 `DATABASE_URL`。再执行 [sql/001_init.sql](sql/001_init.sql)，创建共享授权结构并授予权限。两份 SQL 由管理员手动执行，容器不会自动迁移。后续变更按 `sql/002_<用途>.sql` 递增。
 
 ## 单独构建与启动
 

@@ -21,7 +21,7 @@ def main():
             time.sleep(0.5)
         else:
             raise RuntimeError('Temporary PostgreSQL did not become ready')
-        files = ['tests/sql_fixture.sql', 'admin/sql/001_init.sql', 'admin/sql/001_init.sql',
+        files = ['tests/sql_fixture.sql', 'admin/sql/000_prepare.sql', 'admin/sql/000_prepare.sql', 'admin/sql/001_init.sql', 'admin/sql/001_init.sql',
                  'todo/sql/001_init.sql', 'notes/sql/001_init.sql', 'tests/sql_security.sql']
         for file in files:
             result = subprocess.run(['docker', 'exec', '-i', name, 'psql', '-h', '/tmp', '-U', 'postgres',
