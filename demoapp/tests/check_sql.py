@@ -24,9 +24,12 @@ def main():
         files = ['tests/sql_fixture.sql', 'admin/sql/000_prepare.sql', 'admin/sql/000_prepare.sql', 'admin/sql/001_init.sql', 'admin/sql/001_init.sql',
                  'todo/sql/001_init.sql', 'notes/sql/001_init.sql', 'tests/sql_security.sql']
         for file in files:
+            sql = (root / file).read_text()
+            if file == 'admin/sql/000_prepare.sql':
+                sql = 'set role demo_prepare_admin;\n' + sql + '\nreset role;\n'
             result = subprocess.run(['docker', 'exec', '-i', name, 'psql', '-h', '/tmp', '-U', 'postgres',
                                      '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'],
-                                    input=(root / file).read_text(), text=True, capture_output=True)
+                                    input=sql, text=True, capture_output=True)
             if result.returncode:
                 raise RuntimeError(file + '\n' + result.stdout + result.stderr)
             print(file + ': OK')
