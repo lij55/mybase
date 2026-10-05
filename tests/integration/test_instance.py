@@ -1,8 +1,11 @@
 """Acceptance tests for enabled local features, using isolated disposable fixtures."""
 import base64
+import json
 import os
 from pathlib import Path
 import secrets
+import struct
+import zlib
 import subprocess
 import sys
 import time
@@ -38,6 +41,8 @@ class InstanceTests(unittest.TestCase):
         session = self.api('POST', '/auth/v1/token?grant_type=password', {'email': email, 'password': password})
         self.assertTrue(session.get('access_token'), 'Login must return an access token')
         self.assertTrue(session.get('refresh_token'), 'Login must return a refresh token')
+        header = session['access_token'].split('.')[0]
+        self.assertEqual(json.loads(base64.urlsafe_b64decode(header + '=' * (-len(header) % 4)))['alg'], 'ES256')
         self.assertEqual(session['user']['id'], user['id'])
         return dict(id=user['id'], token=session['access_token'], refresh=session['refresh_token'], email=email)
 
@@ -73,6 +78,13 @@ class InstanceTests(unittest.TestCase):
         manage.smoke(self.instance.values)
         self.api('GET', '/rest/v1/', headers={'apikey': 'invalid-key'}, raw=True, codes=(401, 403))
         self.api('GET', '/auth/v1/admin/users', codes=(401, 403))
+
+    def test_public_jwks_contains_only_es256_public_key(self):
+        jwks = self.api('GET', '/auth/v1/.well-known/jwks.json', authenticated=False)
+        self.assertEqual(len(jwks['keys']), 1)
+        self.assertEqual(jwks['keys'][0]['alg'], 'ES256')
+        self.assertNotIn('d', jwks['keys'][0])
+        self.assertNotIn('k', jwks['keys'][0])
 
     def test_auth_signup_configuration(self):
         settings = self.api('GET', '/auth/v1/settings')
@@ -158,6 +170,26 @@ class InstanceTests(unittest.TestCase):
                 self.assertTrue(content == b'updated', 'Signed URL must return updated contents')
                 self.api('DELETE', '/storage/v1/object/' + self.bucket, {'prefixes': [obj]}, token=self.a['token'])
                 self.api('GET', target, token=self.a['token'], raw=True, codes=(400, 404))
+
+    def test_private_image_transform_and_rls(self):
+        self.a, b = self.user(), self.user()
+        self.storage_fixture()
+        # Valid 4x4 RGB PNG generated without an imaging dependency.
+        def chunk(kind, data):
+            return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data))
+        png = (b'\x89PNG\r\n\x1a\n'
+               + chunk(b'IHDR', struct.pack('>IIBBBBB', 4, 4, 8, 2, 0, 0, 0))
+               + chunk(b'IDAT', zlib.compress((b'\x00' + b'\xff\x00\x00' * 4) * 4))
+               + chunk(b'IEND', b''))
+        obj = self.a['id'] + '/transform.png'
+        self.api('POST', '/storage/v1/object/' + self.bucket + '/' + obj, png,
+                 token=self.a['token'], raw=True, headers={'Content-Type': 'image/png'})
+        path = '/storage/v1/render/image/authenticated/' + self.bucket + '/' + obj + '?width=2&height=2&resize=fill'
+        image = self.api('GET', path, token=self.a['token'], raw=True, headers={'Accept': 'image/png'})
+        self.assertTrue(image.startswith(b'\x89PNG\r\n\x1a\n'))
+        self.assertEqual(struct.unpack('>II', image[16:24]), (2, 2))
+        self.api('GET', path, token=b['token'], raw=True, codes=(400, 403, 404))
+        self.api('GET', path, raw=True, codes=(400, 403, 404))
 
     def test_edge_function_auth_validation_and_cors(self):
         a = self.user()

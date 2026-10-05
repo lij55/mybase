@@ -32,9 +32,9 @@ class Application:
         if self.kind not in {'admin', 'todo', 'notes'}:
             raise ValueError('Unknown APP_KIND')
         self.url = os.environ['SUPABASE_URL'].rstrip('/')
-        self.anon = os.environ['SUPABASE_ANON_KEY']
+        self.anon = os.environ['SUPABASE_PUBLISHABLE_KEY']
         if self.kind == 'admin':
-            self.service = os.environ['SUPABASE_SERVICE_ROLE_KEY']
+            self.service = os.environ['SUPABASE_SECRET_KEY']
             self.dsn = os.environ['DATABASE_URL']
             self.admins = {valid_uuid(x.strip()) for x in os.environ['ADMIN_USER_IDS'].split(',') if x.strip()}
             if not self.admins:

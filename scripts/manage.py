@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
-"""Small, dependency-free deployment wrapper. Never executes .env as shell code."""
+"""Small deployment wrapper; uses Node crypto for ES256 keys. Never executes .env as shell code."""
 import argparse
-import base64
 import hashlib
-import hmac
 import json
 import ipaddress
 import os
@@ -131,15 +129,20 @@ def read_env(path):
     return values
 
 
-def b64(data):
-    return base64.urlsafe_b64encode(data).decode().rstrip('=')
+AUTH_FIELDS = ('SUPABASE_PUBLISHABLE_KEY', 'SUPABASE_SECRET_KEY',
+               'ANON_KEY_ASYMMETRIC', 'SERVICE_ROLE_KEY_ASYMMETRIC', 'JWT_KEYS', 'JWT_JWKS')
 
 
-def jwt(secret, role):
-    now = int(time.time())
-    payload = {'role': role, 'iss': 'supabase', 'iat': now, 'exp': now + 5 * 365 * 86400}
-    content = b64(b'{"alg":"HS256","typ":"JWT"}') + '.' + b64(json.dumps(payload).encode())
-    return content + '.' + b64(hmac.new(secret.encode(), content.encode(), hashlib.sha256).digest())
+def auth_keys(action, values=None):
+    try:
+        result = subprocess.run(['node', str(ROOT / 'scripts/auth_keys.cjs'), action],
+                                input=json.dumps(values or {}), text=True,
+                                capture_output=True, check=True)
+    except FileNotFoundError:
+        raise ValueError('密钥初始化与校验需要 Node.js >= 18') from None
+    except subprocess.CalledProcessError:
+        raise ValueError('ES256 密钥、签名或 API key 配置无效') from None
+    return json.loads(result.stdout) if action == 'generate' else None
 
 
 def init_caddy(root, values):
@@ -166,6 +169,10 @@ def init_caddy(root, values):
         pattern = pattern.replace(re.escape('@@CADDY_BIND@@'), r'[0-9.]+')
         existing = path.read_text().replace('existing caddy/Caddyfile is never overwritten.',
                                             'unmodified generated files are refreshed; custom files are preserved.')
+        # Upgrade the previous generated 404 fallback while preserving custom files.
+        existing = existing.replace(
+            '\t# Unknown hosts must never fall through to Studio.\n\thandle {\n\t\trespond "Not found" 404\n\t}',
+            '\t# All other hosts go to the demo Traefik entrypoint; preserve Host routing.\n\thandle {\n\t\treverse_proxy 127.0.0.1:8090\n\t}')
         if not re.fullmatch(pattern, existing):
             return
     template = template.replace('@@CADDY_BIND@@', bind)
@@ -184,20 +191,23 @@ def init(root=ROOT):
         with open(path, 'x', opener=lambda p, f: os.open(p, f, 0o600)) as handle:
             handle.write((root / '.env.example').read_text())
     values = read_env(path)
-    missing = [k for k in [*SECRET_BYTES, 'ANON_KEY', 'SERVICE_ROLE_KEY'] if not values.get(k)]
+    missing = [k for k in [*SECRET_BYTES, *AUTH_FIELDS] if not values.get(k)]
     if missing and (root / 'volumes/db/data/PG_VERSION').exists():
         raise ValueError('已有数据库缺少密钥，请恢复原 .env，不要生成替换密钥')
     new = {k: secrets.token_hex(SECRET_BYTES[k]) for k in missing if k in SECRET_BYTES}
-    secret = new.get('JWT_SECRET', values.get('JWT_SECRET'))
-    for k, role in [('ANON_KEY', 'anon'), ('SERVICE_ROLE_KEY', 'service_role')]:
-        if k in missing:
-            new[k] = jwt(secret, role)
+    absent = [k for k in AUTH_FIELDS if not values.get(k)]
+    if absent:
+        if len(absent) != len(AUTH_FIELDS):
+            raise ValueError('新密钥配置不完整，请恢复完整密钥组；不会自动替换部分密钥')
+        new.update(auth_keys('generate'))
     text = path.read_text()
     for k, v in new.items():
+        literal = "'" + v + "'" if k in ('JWT_KEYS', 'JWT_JWKS') else v
+        line = k + '=' + literal
         if k in values:
-            text = re.sub(r'^' + k + r'=.*$', k + '=' + v, text, flags=re.M)
+            text = re.sub(r'^' + k + r'=.*$', lambda _: line, text, flags=re.M)
         else:
-            text += f'\n{k}={v}\n'
+            text += '\n' + line + '\n'
     if new:
         tmp = path.with_suffix('.env.partial')
         with open(tmp, 'w', opener=lambda p, f: os.open(p, f, 0o600)) as handle:
@@ -221,18 +231,7 @@ def validate(v):
     for k in ['POSTGRES_PASSWORD', 'DASHBOARD_PASSWORD', 'DASHBOARD_USERNAME']:
         if not re.fullmatch('[A-Za-z0-9_-]+', v.get(k, '')):
             raise ValueError(f'{k} 仅支持字母数字下划线和连字符，避免 URI/模板转义错误')
-    for k, role in [('ANON_KEY', 'anon'), ('SERVICE_ROLE_KEY', 'service_role')]:
-        try:
-            header, payload, signature = v[k].split('.')
-            expected = b64(hmac.new(v['JWT_SECRET'].encode(), f'{header}.{payload}'.encode(), hashlib.sha256).digest())
-            data = json.loads(base64.urlsafe_b64decode(payload + '=' * (-len(payload) % 4)))
-            assert hmac.compare_digest(signature, expected)
-            assert data['role'] == role and data['exp'] > time.time()
-        except (ValueError, KeyError, AssertionError):
-            raise ValueError(f'{k} 签名、角色或有效期错误，必须与 JWT_SECRET 配套') from None
-    for k in ['JWT_JWKS', 'JWT_KEYS', 'SUPABASE_PUBLISHABLE_KEY', 'SUPABASE_SECRET_KEY', 'ANON_KEY_ASYMMETRIC', 'SERVICE_ROLE_KEY_ASYMMETRIC']:
-        if v.get(k):
-            raise ValueError(f'{k}: 此封装使用上游兼容的 HS256 模式；迁移 ES256 需一起更新各服务配置')
+    auth_keys('validate', v)
     if v.get('POSTGRES_PORT') != '5432' or v.get('POSTGRES_HOST') != 'db' or v.get('POSTGRES_DB') != 'postgres':
         raise ValueError('内部数据库固定为 db:5432/postgres；宿主机改用 DB_SESSION_PORT')
     if not re.fullmatch('[a-z0-9][a-z0-9_-]*', v.get('COMPOSE_PROJECT_NAME', '')):
@@ -288,13 +287,22 @@ def smoke(v):
         if code not in codes:
             raise ValueError(f'{url}: 期望 {codes}，实际 {code}')
     for path in ['/healthz', '/auth/v1/health']:
-        expect(base + path, [200], {'apikey': v['ANON_KEY'], 'Authorization': 'Bearer ' + v['ANON_KEY']})
-    expect(base + '/rest/v1/', [200], {'apikey': v['SERVICE_ROLE_KEY']})
+        expect(base + path, [200], {'apikey': v['SUPABASE_PUBLISHABLE_KEY'], 'Authorization': 'Bearer ' + v['SUPABASE_PUBLISHABLE_KEY']})
+    expect(base + '/rest/v1/', [200], {'apikey': v['SUPABASE_SECRET_KEY']})
     expect(base + '/rest/v1/', [401, 403])
     for path in ['/', '/pg/', '/api/platform/profile', '/mcp', '/realtime/v1/api/tenants', '/auth/v1/%2e%2e/%2e%2e/pg/']:
         expect(base + path, [404])
     expect(f"http://127.0.0.1:{v['STUDIO_PORT']}/", [401])
-    print('冒烟通过：Auth、REST、未认证拒绝、管理路径隔离、Studio Basic Auth')
+    # Native Realtime /healthcheck is liveness only. Check the public tenant's
+    # WebSocket authentication separately using the new publishable key.
+    from integration_support import WebSocket
+    from types import SimpleNamespace
+    try:
+        ws = WebSocket(SimpleNamespace(values=v))
+        ws.close()
+    except (OSError, AssertionError) as exc:
+        raise ValueError('Realtime WebSocket 握手或新 API key 校验失败') from exc
+    print('冒烟通过：Auth、REST、Realtime WebSocket、未认证拒绝、管理路径隔离、Studio Basic Auth')
 
 
 def backup(v):
@@ -306,6 +314,7 @@ def backup(v):
     stamp = time.strftime('%Y%m%d-%H%M%S')
     target = folder / f'mybase-{stamp}.tar.gz'
     partial = target.with_suffix('.gz.partial')
+    archive_root = target.name[:-7]
     volume = cfg['volumes']['db-config']['name']
     image = cfg['services']['db']['image']
     print('停止写入及数据库以创建一致性冷备份；完成/失败后恢复原运行服务。', flush=True)
@@ -313,11 +322,12 @@ def backup(v):
         compose(v, ['stop', '-t', '60'])
         with open(partial, 'xb', opener=lambda p, f: os.open(p, f, 0o600)) as handle:
             subprocess.run(['docker', 'run', '--rm', '--network', 'none', '--user', '0',
-                '--mount', f'type=bind,source={ROOT},target=/snapshot/project,readonly',
-                '--mount', f'type=volume,source={volume},target=/snapshot/db-config,readonly',
-                '--entrypoint', 'tar', image, '-czf', '-', '--exclude=project/backups',
-                '--exclude=project/.git', '--exclude=project/.agents', '--exclude=project/.codex',
-                '--exclude=__pycache__', '-C', '/snapshot', 'project', 'db-config'], stdout=handle, check=True)
+                '--mount', f'type=bind,source={ROOT},target=/snapshot/{archive_root}/project,readonly',
+                '--mount', f'type=volume,source={volume},target=/snapshot/{archive_root}/db-config,readonly',
+                '--mount', f'type=bind,source={ROOT / "scripts/restore.sh"},target=/snapshot/{archive_root}/restore.sh,readonly',
+                '--entrypoint', 'tar', image, '-czf', '-', f'--exclude={archive_root}/project/backups',
+                f'--exclude={archive_root}/project/.git', f'--exclude={archive_root}/project/.agents', f'--exclude={archive_root}/project/.codex',
+                '--exclude=__pycache__', '-C', '/snapshot', archive_root], stdout=handle, check=True)
         partial.replace(target)
         with target.open('rb') as handle:
             digest = hashlib.file_digest(handle, 'sha256').hexdigest()

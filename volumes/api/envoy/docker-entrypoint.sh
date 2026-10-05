@@ -9,9 +9,7 @@ echo "Generating Envoy configuration..."
 
 # Process the lds.yaml template with environment variables using sed
 # Using | as delimiter since JWT tokens contain /
-sed -e "s|\${ANON_KEY}|${ANON_KEY}|g" \
-    -e "s|\${ANON_KEY_ASYMMETRIC}|${ANON_KEY_ASYMMETRIC}|g" \
-    -e "s|\${SERVICE_ROLE_KEY}|${SERVICE_ROLE_KEY}|g" \
+sed -e "s|\${ANON_KEY_ASYMMETRIC}|${ANON_KEY_ASYMMETRIC}|g" \
     -e "s|\${SERVICE_ROLE_KEY_ASYMMETRIC}|${SERVICE_ROLE_KEY_ASYMMETRIC}|g" \
     -e "s|\${SUPABASE_PUBLISHABLE_KEY}|${SUPABASE_PUBLISHABLE_KEY}|g" \
     -e "s|\${SUPABASE_SECRET_KEY}|${SUPABASE_SECRET_KEY}|g" \
@@ -25,7 +23,8 @@ if [ -n "$SUPABASE_SECRET_KEY" ] && \
    [ -n "$ANON_KEY_ASYMMETRIC" ]; then
   echo "Envoy sb_ key translation enabled"
 else
-  echo "Envoy running in legacy API key mode (sb_ keys disabled)"
+  echo "Missing opaque API keys or internal ES256 JWTs; run make init" >&2
+  exit 1
 fi
 
 echo "Envoy configuration generated successfully"

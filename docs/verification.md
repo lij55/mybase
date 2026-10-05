@@ -1,5 +1,33 @@
 # 验证记录
 
+## 2026-10-05：其余组件镜像升级验收
+
+在新密钥机制基础上，将 11 种组件/基础镜像升级至固定稳定版本，完整版本、官方来源和拉取 digest 见 [镜像版本核对](image-versions.md)。Realtime、Envoy 和 postgres-meta 保持已核对版本。使用独立临时目录、端口、网络、项目名和全新密钥验证，数据库实际版本为 PostgreSQL 17.11。
+
+- 全部核心服务与三个 demo 镜像构建、启动及健康检查通过。
+- 23 项根单元测试、18 项 demo 单元测试、13 项真实 Supabase 集成测试通过。
+- 新增私有 PNG 经 Storage/imgproxy 缩放到 2×2 的真实测试，验证匿名与跨用户访问被拒绝；其余集成覆盖 Auth ES256/刷新、JWKS、REST/RPC RLS、Storage CRUD/签名 URL、Functions、Realtime、Studio 和两个连接池。
+- 三个 demo 经 Traefik 3.7.13 和真实 Chromium 验证：Admin 登录、应用发现、创建用户、授权/撤权及越权拒绝；Todo 新增/完成/删除、Notes 新增/删除；两用户隔离、安全渲染、会话刷新、旧 token 撤权即时生效和退出全部通过，无浏览器未捕获异常。
+- PostgreSQL 新镜像上重复执行初始化 SQL、SQL 安全检查通过；diff 校验通过。
+
+本次不需要兼容补丁，demo 业务逻辑没有修改，只更新镜像版本。测试容器、网络、卷、专用 demo 镜像及含密钥的临时环境均已清理；已下载的正式组件镜像保留供后续部署。
+
+## 2026-10-05：新密钥机制与三个 demo 应用
+
+使用独立目录、项目名、端口和新生成密钥初始化全新环境，未改动已有运行实例。Realtime 升级至 `v2.140.7`，应用使用 `sb_publishable_` / `sb_secret_`，用户会话使用 ES256。
+
+- 23 项根配置/客户端单元测试、18 项 demo 单元测试、12 项真实 Supabase 集成测试通过；Compose 配置、Node/Shell 语法和 diff 校验通过。
+- 真实集成测试验证 ES256 登录与刷新、公开 JWKS 不含私钥或对称密钥、Auth、REST/RPC RLS、Storage、Functions、Realtime Broadcast/Presence/数据库事件隔离、Studio 和两个连接池。
+- 三个 demo 使用各自真实镜像，经隔离的 Traefik Host 路由访问；Chromium 请求连接真实 Auth、PostgREST 和数据库，没有 API 拦截或模拟数据。
+- Admin：ES256 登录、发现 Todo/Notes、创建用户且不自动授权、授予/撤销两应用访问权；普通用户访问管理接口及自行授权均被拒绝。
+- Todo：浏览器新增、完成、删除；Notes：浏览器新增、删除。两应用验证内容安全渲染、两用户数据隔离、跨用户删除被拒绝、ES256 会话自动刷新和退出。Todo 跨用户修改被拒绝；Notes 不支持编辑，请求按原有契约返回 400。
+- 撤权后，原有有效 ES256 access token 立即无法读取已有记录或新增记录；secret key 仅注入 Admin，未注入 Todo/Notes。
+- 修正首次部署说明：先启动默认 Supabase 并创建 demo schema，再将其加入 `PGRST_DB_SCHEMAS`。提前暴露不存在的 schema 会造成 PostgREST schema cache/健康检查失败。Traefik 健康状态更新后还需等待动态路由加载，容器 healthy 不等于路由已经可达。
+
+Realtime 容器使用原生 `/healthcheck` 检查存活；公开 WebSocket 握手由 smoke 验证，功能由集成测试验证，不生成自定义 HS256 健康检查令牌。demo 后端仅更新环境变量读取，业务逻辑、SQL 和前端代码未修改。临时容器、网络、卷与含密钥的测试目录在验收后清理。
+
+## 2026-09-29：此前验证记录
+
 环境：2026-09-29，Linux x86_64，Docker Compose 2.33.0，Python 3.14。上游版本见 [UPSTREAM.md](../UPSTREAM.md)。
 
 已完成：
@@ -20,4 +48,4 @@
 
 尚未验证：实际 Cloudflare 账户下的 Tunnel/DNS、公网 HTTPS/WSS、真实 SMTP/邮件回调/OAuth、前端浏览器完整交互、Realtime UPDATE/DELETE 语义、私有频道授权及重连、图片转换/S3 协议、MFA、压测、高可用与大数据集恢复时长。上述项需要实际账户、域名、业务负载和进一步验收，不能从容器 healthy 推断已经完成。
 
-修复过的兼容问题：新版 REST OpenAPI 根路径需管理 key；Nginx 要保留对象名 URL 转义；官方 Realtime 网关需固定 DNS alias；上游新版 hello 的 opaque key 示例需替换为本部署 HS256 兼容的用户鉴权示例。
+修复过的兼容问题：新版 REST OpenAPI 根路径需管理 key；Nginx 要保留对象名 URL 转义；官方 Realtime 网关需固定 DNS alias；hello 示例携带用户 ES256 JWT，并使用 opaque publishable key。

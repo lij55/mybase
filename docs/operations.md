@@ -20,8 +20,9 @@
 
 ## 备份范围与一致性
 
-`make backup` 会记录当前运行服务，停止整个项目（包括数据库、API和连接池），用固定的 PostgreSQL 镜像内的 tar 工具打包，最后重新启动原来运行的服务。归档包含：
+`make backup` 会记录当前运行服务，停止整个项目（包括数据库、API和连接池），用固定的 PostgreSQL 镜像内的 tar 工具打包，最后重新启动原来运行的服务。归档根目录为 `mybase-YYYYMMDD-HHMMSS/`，下面包含三个内容：
 
+- `restore.sh`：恢复 `db-config` 命名卷的脚本，不启动服务。
 - `project/`：配置、原 `.env`、数据库 `volumes/db/data`、文件 `volumes/storage`、函数、SQL 和文档。
 - `db-config/`：命名卷中的 PostgreSQL / pgsodium 配置和解密所需资料。
 - 不包含 backups 自身、Git 元数据、Python 缓存和可再生成的 Deno 缓存。
@@ -46,27 +47,24 @@
    sudo tar --numeric-owner -xzf mybase-YYYYMMDD-HHMMSS.tar.gz -C restore-stage
    ```
 
-2. 把 `restore-stage/project` 放到最终持久化路径。保留数据库与 Storage 原 UID/GID；不要对整个目录递归 `chown`。只确保部署用户可读取和编辑 `.env`、脚本和配置。原 `.env` 也必须恢复，保持 `COMPOSE_PROJECT_NAME`，默认 `mybase`。
-3. 在项目目录创建但不启动容器；这会准备命名卷。隔离演练环境不要连接生产公网入口或启用生产发信，避免发送生产邮件或争用域名。
+2. 新格式备份解压后，进入顶层目录，执行恢复脚本：
 
    ```bash
-   docker compose -f docker-compose.yml -f compose.override.yml create
-   docker volume inspect mybase_db-config
+   cd restore-stage/mybase-YYYYMMDD-HHMMSS
+   ./restore.sh
+   cd project
+   make check
+   make up
+   make smoke
    ```
 
-   卷名默认是 `mybase_db-config`；修改过项目名时同步替换以下命令中的卷名。`create` 遇到镜像缺失会尝试拉取，数据文件尚不会执行数据库启动。
+   后续日常操作都在 `project` 目录执行。恢复前可将整个顶层目录移到最终持久化路径；保留数据库与 Storage 原 UID/GID，不要递归 `chown` 整个目录。确保部署用户能读取原 `.env` 和脚本；必要时使用有权限的用户执行恢复。
 
-4. 将解出的 `db-config` 恢复到空命名卷。下面命令中的源路径替换为实际**绝对路径**：
+3. `restore.sh` 从备份的原 `.env` 和 Compose 配置读取真实卷名和数据库镜像版本，不生成新密钥。它先拒绝已有同名 `db-config` 卷，再创建但不启动容器，最后用临时容器将 `db-config/` 中的文件以原权限和所有者复制到命名卷。如果复制失败，卷可能留有部分数据；检查失败原因后，在确认该卷只属于这次失败恢复时手动移除，再重试。不要删除现有实例的卷。
 
-   ```bash
-   docker run --rm --network none --user 0 \
-     --mount type=bind,source=/absolute/restore-stage/db-config,target=/restore,readonly \
-     --mount type=volume,source=mybase_db-config,target=/target \
-     --entrypoint sh supabase/postgres:17.6.1.136 \
-     -c 'cp -a /restore/. /target/'
-   ```
+4. 核对用户、业务表行数、Storage 对象可下载、登录与跨用户 RLS、Realtime、函数。隔离演练环境不要连接生产公网入口或启用生产发信；核实公网入口后再切流。只有完成验证，才可淘汰旧实例或旧备份。
 
-5. 执行 `make check`、`make up`、`make smoke`。核对用户、业务表行数、Storage 对象可下载、登录与跨用户 RLS、Realtime、函数。核实公网域名与 Tunnel 后再切流。只有完成验证，才可淘汰旧实例或旧备份。
+旧格式备份没有顶层目录和 `restore.sh`，仍需手动执行 Compose `create`，再将解压出的 `db-config/` 复制到对应的空命名卷，最后启动。
 
 不同 CPU 架构、不同 PostgreSQL 大版本或跨云迁移时优先设计逻辑导出/导入及扩展兼容方案，不能直接复制物理目录。
 

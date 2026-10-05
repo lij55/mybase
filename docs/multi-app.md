@@ -17,7 +17,7 @@
 | Auth 用户与凭据 | 复用 | 共用 `auth.users`、密码、OAuth 身份和 JWT 信任体系；删除账号会影响使用该账号的所有 App。 |
 | Auth 设置 | 复用 | 注册开关、SMTP、邮件模板、OAuth 提供商、Site URL 与回调白名单是项目级设置。 |
 | 浏览器登录状态 | 各 App 自行维护 | 共用账号不等于不同域名自动登录；浏览器存储和 Cookie 有域名边界。跨域免登录需要另行设计。 |
-| API 密钥与内置数据库角色 | 复用 | 共用 `ANON_KEY`、`SERVICE_ROLE_KEY`、`anon`、`authenticated`、`service_role`；不是每 App 独立凭据。 |
+| API 密钥与内置数据库角色 | 复用 | 共用 `SUPABASE_PUBLISHABLE_KEY`、`SUPABASE_SECRET_KEY`、`anon`、`authenticated`、`service_role`；不是每 App 独立凭据。 |
 | App 成员资格与业务权限 | 独立判断 | 为同一个用户分别授予 `app_a`、`app_b` 资格；登录成功不会自动获得所有 App 权限。 |
 | 业务表、索引、序列、函数、视图 | 按 schema 独立 | 各 App 使用自己的 schema；跨 schema 引用必须显式设计，默认避免互相依赖。 |
 | 业务 profile | 按 App 独立 | 可分别建立 `app_a.profiles`、`app_b.profiles`，引用同一个 `auth.users.id`，各自保存业务字段。 |
@@ -124,7 +124,7 @@ PGRST_DB_SCHEMAS=public,graphql_public,app_todo,app_notes,app_crm
 使用 SDK 的正式 App 可以指定默认 schema：
 
 ```javascript
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   db: { schema: 'app_crm' },
 })
 // 登录后：成员资格仍由数据库检查。

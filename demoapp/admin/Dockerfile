@@ -1,4 +1,4 @@
-FROM python:3.13-slim
+FROM python:3.14.8-slim
 WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 APP_KIND=admin PORT=8080
 COPY admin/requirements.txt /app/requirements.txt

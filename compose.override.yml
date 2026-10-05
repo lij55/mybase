@@ -54,7 +54,7 @@ services:
       - '127.0.0.1:${DB_TRANSACTION_PORT:-6543}:6543'
     logging: *logging
   public-api:
-    image: nginx:1.28.0-alpine
+    image: nginx:1.30.5-alpine
     restart: unless-stopped
     depends_on:
       api-gw:

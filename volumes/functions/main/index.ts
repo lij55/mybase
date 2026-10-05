@@ -2,7 +2,6 @@ import * as jose from 'jsr:@panva/jose@6'
 
 console.log('main function started')
 
-const JWT_SECRET = Deno.env.get('JWT_SECRET')
 const SUPABASE_JWKS = parseJwks(Deno.env.get('SUPABASE_JWKS'))
 const LOCAL_JWKS = SUPABASE_JWKS ? jose.createLocalJWKSet(SUPABASE_JWKS) : null
 const VERIFY_JWT = Deno.env.get('VERIFY_JWT') === 'true'
@@ -13,7 +12,6 @@ type AuthFailure = {
 }
 
 export enum RequestErrors {
-  InvalidLegacyJWT = 'UNAUTHORIZED_LEGACY_JWT',
   InvalidAsymmetricJWT = 'UNAUTHORIZED_ASYMMETRIC_JWT',
   InvalidTokenFormat = 'UNAUTHORIZED_INVALID_JWT_FORMAT',
   UnsupportedTokenAlgorithm = 'UNAUTHORIZED_UNSUPPORTED_TOKEN_ALGORITHM',
@@ -81,24 +79,6 @@ function getAuthErrorResponse({ code, message = 'Invalid JWT' }: AuthFailure) {
   )
 }
 
-async function isValidLegacyJWT(jwt: string): Promise<AuthFailure | null> {
-  if (!JWT_SECRET) {
-    console.error('JWT_SECRET not available for HS256 token verification')
-    return { code: RequestErrors.InvalidLegacyJWT }
-  }
-
-  const encoder = new TextEncoder();
-  const secretKey = encoder.encode(JWT_SECRET);
-
-  try {
-    await jose.jwtVerify(jwt, secretKey);
-  } catch (e) {
-    console.error('Symmetric Legacy JWT verification error', e);
-    return { code: RequestErrors.InvalidLegacyJWT }
-  }
-  return null
-}
-
 async function isValidJWT(jwt: string): Promise<AuthFailure | null> {
   if (!LOCAL_JWKS) {
     console.error('JWKS not available for ES256/RS256 token verification')
@@ -115,21 +95,8 @@ async function isValidJWT(jwt: string): Promise<AuthFailure | null> {
   return null
 }
 
-/**
- * Verify JWT token, handling both legacy (HS256) and newer (ES256/RS256) algorithms
- * 
- * This function automatically detects the algorithm used in the token and applies
- * the appropriate verification method:
- * - HS256: Uses JWT_SECRET (symmetric key)
- * - ES256/RS256: Uses JWKS endpoint (asymmetric public keys)
- * 
- * This fix ensures compatibility with both legacy tokens and newer asymmetric tokens,
- * resolving the "Key for the ES256 algorithm must be of type CryptoKey" error.
- * 
- * @param jwt - The JWT token string to verify
- * @returns Authentication failure details, or null when verification succeeds
- */
-async function isValidHybridJWT(jwt: string): Promise<AuthFailure | null> {
+// New deployments verify asymmetric user session JWTs only.
+async function isValidSessionJWT(jwt: string): Promise<AuthFailure | null> {
   let jwtAlgorithm: string | undefined
   try {
     jwtAlgorithm = jose.decodeProtectedHeader(jwt).alg
@@ -146,12 +113,6 @@ async function isValidHybridJWT(jwt: string): Promise<AuthFailure | null> {
       code: RequestErrors.InvalidTokenFormat,
       message: 'Invalid JWT format',
     }
-  }
-
-  if (jwtAlgorithm === 'HS256') {
-    console.log(`Legacy token type detected, attempting ${jwtAlgorithm} verification.`)
-
-    return await isValidLegacyJWT(jwt)
   }
 
   if (jwtAlgorithm === 'ES256' || jwtAlgorithm === 'RS256') {
@@ -171,7 +132,7 @@ Deno.serve(async (req: Request) => {
       if (typeof token !== 'string') {
         return getAuthErrorResponse(token)
       }
-      const authFailure = await isValidHybridJWT(token)
+      const authFailure = await isValidSessionJWT(token)
       if (authFailure) {
         return getAuthErrorResponse(authFailure)
       }

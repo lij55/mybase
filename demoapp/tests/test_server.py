@@ -17,7 +17,7 @@ OTHER = '22222222-2222-4222-8222-222222222222'
 
 def application(kind='admin'):
     with patch.dict(os.environ, {'APP_KIND': kind, 'SUPABASE_URL': 'http://supabase',
-                                 'SUPABASE_ANON_KEY': 'public', 'SUPABASE_SERVICE_ROLE_KEY': 'secret',
+                                 'SUPABASE_PUBLISHABLE_KEY': 'public', 'SUPABASE_SECRET_KEY': 'secret',
                                  'DATABASE_URL': 'postgresql://restricted', 'ADMIN_USER_IDS': USER}, clear=True):
         return server.Application()
 

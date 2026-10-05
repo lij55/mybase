@@ -19,7 +19,7 @@ def create_admin(values):
         raise SystemExit('邮箱无效或密码长度不符合要求')
     if password != getpass.getpass('再次输入密码：'):
         raise SystemExit('两次密码不同')
-    key = values['SERVICE_ROLE_KEY']
+    key = values['SUPABASE_SECRET_KEY']
     if not key:
         raise SystemExit('请先在仓库根目录执行 make init')
     url = f"http://127.0.0.1:{values['PUBLIC_API_PORT']}/auth/v1/admin/users"

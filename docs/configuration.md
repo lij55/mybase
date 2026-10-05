@@ -38,11 +38,13 @@ API 域名根路径 `/` 返回 404 是 API 与管理界面隔离的预期行为�
 
 ## 密钥模式与轮换
 
-本封装使用上游仍支持的 **HS256 / ANON_KEY / SERVICE_ROLE_KEY** 兼容模式，生成的两枚 API JWT 有效期五年；用户 access token 默认一小时。空的 `SUPABASE_PUBLISHABLE_KEY` / `SUPABASE_SECRET_KEY` 不用于前端。选择兼容模式是为了不引入额外密钥生成依赖，不代表已实现最新 ES256 自动轮换。
+新环境使用 **opaque API key + ES256**：浏览器使用 `SUPABASE_PUBLISHABLE_KEY`（`sb_publishable_...`），可信服务端使用 `SUPABASE_SECRET_KEY`（`sb_secret_...`）。`make init` 需要 Node.js >= 18，使用内置 crypto 生成 P-256 密钥，无 npm 依赖。根 `.env` 不再生成旧版 `ANON_KEY` / `SERVICE_ROLE_KEY`。
 
-如需 ES256 与 `sb_publishable_` / `sb_secret_`，应按[官方迁移文档](https://supabase.com/docs/guides/self-hosting/self-hosted-auth-keys)整体迁移 Auth、PostgREST、Realtime、Storage、Functions、Envoy，并修改本封装的校验；不能只往 `.env` 填几枚新密钥。
+`JWT_KEYS` 含 ES256 私钥，仅传给 Auth；`JWT_JWKS` 仅含公钥，传给 PostgREST、Realtime、Storage 和 Functions。Auth 签发的用户 access token 默认一小时。网关将 opaque key 转为内部 `ANON_KEY_ASYMMETRIC` / `SERVICE_ROLE_KEY_ASYMMETRIC` JWT（五年有效），保留请求中的用户 JWT。内部 JWT 不用于前端配置。`JWT_SECRET` 保留供数据库初始化、Supavisor 和内部管理服务使用，不负责新用户令牌签名。Realtime 管理接口在最新版仍使用内部 HS256；容器通过原生 `/healthcheck` 检查进程存活，`make smoke` 另外验证公开入口的 WebSocket 握手与 publishable key，`make integration` 验证 ES256 用户订阅、Broadcast、Presence 和数据库事件。无需额外生成 HS256 健康检查令牌。
 
-`ANON_KEY` 可公开，但它不等于“允许访问所有数据”：所有暴露表必须有适当的 grants 和 RLS。`SERVICE_ROLE_KEY` 会绕过 RLS，绝不能放进 `VITE_*` / `NEXT_PUBLIC_*` 或浏览器包。
+重复运行 `make init` 保留完整密钥组；部分缺失会报错，避免产生不匹配的密钥。API key 可以独立更换为相同格式的新随机 key，然后重新应用配置并更新客户端，无需更换 ES256 签名密钥，也不会使用户会话失效。更换 ES256 密钥需要成组更新私钥、公钥和内部 JWT，会使旧用户会话失效。本封装不自动轮换密钥。配置依据[官方自托管密钥文档](https://supabase.com/docs/guides/self-hosting/self-hosted-auth-keys)。
+
+`SUPABASE_PUBLISHABLE_KEY` 可公开，但它不等于“允许访问所有数据”：所有暴露表必须有适当的 grants 和 RLS。`SUPABASE_SECRET_KEY` 会绕过 RLS，绝不能放进 `VITE_*` / `NEXT_PUBLIC_*` 或浏览器包。
 
 修改 `POSTGRES_PASSWORD` 不会自动修改已经初始化数据库的角色密码。修改加密密钥可能导致已有数据或配置无法解密。密钥轮换需要备份、数据库角色更新和各服务联动，不能通过删除 `.env` 后重跑 `make init` 实现。定期记录 API JWT 到期日并提前演练轮换。
 

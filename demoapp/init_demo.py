@@ -59,8 +59,8 @@ def initialize(root=ROOT):
     if not root_env.exists():
         raise ValueError('缺少根 .env，请先自行启动并验证 Supabase')
     values = manage.effective_env(manage.read_env(root_env))
-    if not values.get('ANON_KEY') or not values.get('SERVICE_ROLE_KEY'):
-        raise ValueError('根 .env 缺少 ANON_KEY 或 SERVICE_ROLE_KEY，请先完成 Supabase 配置')
+    if not values.get('SUPABASE_PUBLISHABLE_KEY') or not values.get('SUPABASE_SECRET_KEY'):
+        raise ValueError('根 .env 缺少 SUPABASE_PUBLISHABLE_KEY 或 SUPABASE_SECRET_KEY，请先完成 Supabase 配置')
     schemas = {s.strip() for s in values['PGRST_DB_SCHEMAS'].split(',')}
     if not {'app_todo', 'app_notes'} <= schemas:
         print('提示：请在 Supabase 一侧配置 PGRST_DB_SCHEMAS 包含 app_todo,app_notes 并应用；本脚本不会修改它。')
@@ -86,8 +86,8 @@ def initialize(root=ROOT):
             raise ValueError(f'Auth 用户 {user} 不存在或邮箱未确认，请在 Studio 中检查')
     write_env(path, text, {
         'SUPABASE_DOCKER_NETWORK': existing.get('SUPABASE_DOCKER_NETWORK') or values['COMPOSE_PROJECT_NAME'] + '_default',
-        'SUPABASE_ANON_KEY': values['ANON_KEY'],
-        'SUPABASE_SERVICE_ROLE_KEY': values['SERVICE_ROLE_KEY'],
+        'SUPABASE_PUBLISHABLE_KEY': values['SUPABASE_PUBLISHABLE_KEY'],
+        'SUPABASE_SECRET_KEY': values['SUPABASE_SECRET_KEY'],
         'DATABASE_URL': f'postgresql://app_authorizer:{quote(password, safe="")}@db:5432/{values["POSTGRES_DB"]}',
         'ADMIN_USER_IDS': ','.join(ids),
     })

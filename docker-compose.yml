@@ -14,7 +14,7 @@ services:
 
   studio:
     container_name: supabase-studio
-    image: supabase/studio:2026.09.07-sha-7996410
+    image: supabase/studio:2026.09.28-sha-5e59b60
     restart: unless-stopped
     healthcheck:
       test:
@@ -50,8 +50,8 @@ services:
 
       SUPABASE_URL: http://api-gw:8000
       SUPABASE_PUBLIC_URL: ${SUPABASE_PUBLIC_URL:-https://api.${PUBLIC_HOST:-my.supabase.local}}
-      SUPABASE_ANON_KEY: ${ANON_KEY}
-      SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY}
+      SUPABASE_ANON_KEY: ${SUPABASE_PUBLISHABLE_KEY}
+      SUPABASE_SERVICE_KEY: ${SUPABASE_SECRET_KEY}
       AUTH_JWT_SECRET: ${JWT_SECRET}
       SUPABASE_PUBLISHABLE_KEY: ${SUPABASE_PUBLISHABLE_KEY:-}
       SUPABASE_SECRET_KEY: ${SUPABASE_SECRET_KEY:-}
@@ -95,8 +95,6 @@ services:
       - ./volumes/api/envoy/lds.template.yaml:/etc/envoy/lds.template.yaml:ro
       - ./volumes/api/envoy/docker-entrypoint.sh:/docker-entrypoint.sh:ro
     environment:
-      ANON_KEY: ${ANON_KEY}
-      SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY}
       SUPABASE_PUBLISHABLE_KEY: ${SUPABASE_PUBLISHABLE_KEY:-}
       SUPABASE_SECRET_KEY: ${SUPABASE_SECRET_KEY:-}
       ANON_KEY_ASYMMETRIC: ${ANON_KEY_ASYMMETRIC:-}
@@ -108,7 +106,7 @@ services:
 
   auth:
     container_name: supabase-auth
-    image: supabase/gotrue:v2.196.0
+    image: supabase/gotrue:v2.197.0
     restart: unless-stopped
     healthcheck:
       test:
@@ -144,12 +142,12 @@ services:
       GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
       GOTRUE_JWT_EXP: ${JWT_EXPIRY:-3600}
 
-      # Legacy symmetric HS256 key
+      # Internal management compatibility key
       GOTRUE_JWT_SECRET: ${JWT_SECRET}
 
-      # JSON array of signing JWKs (EC private + legacy symmetric)
+      # JSON array of signing JWKs (EC private)
       # For Podman, use: GOTRUE_JWT_KEYS: ${JWT_KEYS}
-      #GOTRUE_JWT_KEYS: ${JWT_KEYS:-[]}
+      GOTRUE_JWT_KEYS: ${JWT_KEYS:-[]}
 
       GOTRUE_JWT_ISSUER: ${API_EXTERNAL_URL:-https://api.${PUBLIC_HOST:-my.supabase.local}/auth/v1}
 
@@ -248,7 +246,7 @@ services:
 
   rest:
     container_name: supabase-rest
-    image: postgrest/postgrest:v14.17
+    image: postgrest/postgrest:v16.4
     restart: unless-stopped
     depends_on:
       db:
@@ -284,7 +282,7 @@ services:
   realtime:
     # This container name looks inconsistent but is correct because realtime constructs tenant id by parsing the subdomain
     container_name: realtime-dev.supabase-realtime
-    image: supabase/realtime:v2.134.10
+    image: supabase/realtime:v2.140.7
     restart: unless-stopped
     depends_on:
       db:
@@ -294,7 +292,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "curl -sSfL --head -o /dev/null -H \"Authorization: Bearer ${ANON_KEY}\" http://localhost:4000/api/tenants/realtime-dev/health"
+          "curl -sSfL --head -o /dev/null http://localhost:4000/healthcheck"
         ]
       timeout: 5s
       interval: 30s
@@ -310,12 +308,12 @@ services:
       DB_AFTER_CONNECT_QUERY: 'SET search_path TO _realtime'
       DB_ENC_KEY: ${REALTIME_DB_ENC_KEY:-supabaserealtime}
 
-      # Legacy symmetric HS256 key
+      # Internal management compatibility key
       API_JWT_SECRET: ${JWT_SECRET}
 
-      # JWKS for token verification (EC public + legacy symmetric).
+      # JWKS for token verification (EC public only).
       # For Podman, use: API_JWT_JWKS: ${JWT_JWKS}
-      #API_JWT_JWKS: ${JWT_JWKS:-{"keys":[]}}
+      API_JWT_JWKS: ${JWT_JWKS:-{"keys":[]}}
 
       SECRET_KEY_BASE: ${SECRET_KEY_BASE}
       METRICS_JWT_SECRET: ${JWT_SECRET}
@@ -330,7 +328,7 @@ services:
   # To use S3 backed storage: docker compose -f docker-compose.yml -f docker-compose.s3.yml up
   storage:
     container_name: supabase-storage
-    image: supabase/storage-api:v1.74.0
+    image: supabase/storage-api:v1.79.31
     restart: unless-stopped
     depends_on:
       db:
@@ -355,16 +353,16 @@ services:
       retries: 3
       start_period: 10s
     environment:
-      ANON_KEY: ${ANON_KEY}
-      SERVICE_KEY: ${SERVICE_ROLE_KEY}
+      ANON_KEY: ${ANON_KEY_ASYMMETRIC}
+      SERVICE_KEY: ${SERVICE_ROLE_KEY_ASYMMETRIC}
       POSTGREST_URL: http://rest:3000
 
-      # Legacy symmetric HS256 key
+      # Internal management compatibility key
       AUTH_JWT_SECRET: ${JWT_SECRET}
 
-      # JWKS for token verification (EC public + legacy symmetric).
+      # JWKS for token verification (EC public only).
       # For Podman, use: JWT_JWKS: ${JWT_JWKS}
-      #JWT_JWKS: ${JWT_JWKS:-{"keys":[]}}
+      JWT_JWKS: ${JWT_JWKS:-{"keys":[]}}
 
       DATABASE_URL: postgres://supabase_storage_admin:${POSTGRES_PASSWORD}@${POSTGRES_HOST:-db}:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-postgres}
       STORAGE_PUBLIC_URL: ${SUPABASE_PUBLIC_URL:-https://api.${PUBLIC_HOST:-my.supabase.local}}
@@ -393,7 +391,7 @@ services:
 
   imgproxy:
     container_name: supabase-imgproxy
-    image: darthsim/imgproxy:v3.31.4
+    image: darthsim/imgproxy:v4.0.17
     restart: unless-stopped
     volumes:
       - ./volumes/storage:/var/lib/storage:z
@@ -433,7 +431,7 @@ services:
 
   functions:
     container_name: supabase-edge-functions
-    image: supabase/edge-runtime:v1.76.2
+    image: supabase/edge-runtime:v1.77.4
     restart: unless-stopped
     volumes:
       - ./volumes/functions:/home/deno/functions:z
@@ -447,17 +445,12 @@ services:
       timeout: 5s
       retries: 3
     environment:
-      # Legacy symmetric HS256 key
-      JWT_SECRET: ${JWT_SECRET}
-      # JWKS for token verification (EC public + legacy symmetric).
+      # JWKS for token verification (EC public only).
       # For Podman, use: SUPABASE_JWKS: ${JWT_JWKS}
-      #SUPABASE_JWKS: ${JWT_JWKS:-{"keys":[]}}
+      SUPABASE_JWKS: ${JWT_JWKS:-{"keys":[]}}
 
       SUPABASE_URL: http://api-gw:8000
       SUPABASE_PUBLIC_URL: ${SUPABASE_PUBLIC_URL:-https://api.${PUBLIC_HOST:-my.supabase.local}}
-      # Legacy API keys (HS256-signed JWTs)
-      SUPABASE_ANON_KEY: ${ANON_KEY}
-      SUPABASE_SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY}
       # New opaque API keys
       SUPABASE_PUBLISHABLE_KEYS: "{\"default\":\"${SUPABASE_PUBLISHABLE_KEY:-}\"}"
       SUPABASE_SECRET_KEYS: "{\"default\":\"${SUPABASE_SECRET_KEY:-}\"}"
@@ -475,7 +468,7 @@ services:
   db:
     container_name: supabase-db
     # To upgrade an existing Postgres 15 database in place, see utils/upgrade-pg17.sh.
-    image: supabase/postgres:17.6.1.136
+    image: supabase/postgres:17.11.0.003
     restart: unless-stopped
     volumes:
       - ./volumes/db/realtime.sql:/docker-entrypoint-initdb.d/migrations/99-realtime.sql:Z
@@ -529,7 +522,7 @@ services:
   # Update the DATABASE_URL if you are using an external Postgres database
   supavisor:
     container_name: supabase-pooler
-    image: supabase/supavisor:2.9.12
+    image: supabase/supavisor:2.9.13
     restart: unless-stopped
     ports:
       - ${POSTGRES_PORT:-5432}:5432

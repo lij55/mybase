@@ -23,7 +23,7 @@ class Instance:
 
     def request(self, method, path, data=None, token=None, admin=False,
                 raw=False, codes=(200,), headers=None, authenticated=True, base=None):
-        key = self.values['SERVICE_ROLE_KEY' if admin else 'ANON_KEY']
+        key = self.values['SUPABASE_SECRET_KEY' if admin else 'SUPABASE_PUBLISHABLE_KEY']
         request_headers = {'apikey': key, 'Authorization': 'Bearer ' + (token or key)} if authenticated else {}
         if data is not None:
             request_headers['Content-Type'] = 'text/plain' if raw else 'application/json'
@@ -80,7 +80,7 @@ class WebSocket:
         self.buffer = b''
         try:
             key = base64.b64encode(secrets.token_bytes(16)).decode()
-            path = '/realtime/v1/websocket?apikey=' + instance.values['ANON_KEY'] + '&vsn=1.0.0'
+            path = '/realtime/v1/websocket?apikey=' + instance.values['SUPABASE_PUBLISHABLE_KEY'] + '&vsn=1.0.0'
             self.sock.sendall((f'GET {path} HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\n'
                 f'Connection: Upgrade\r\nSec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n').encode())
             while b'\r\n\r\n' not in self.buffer:

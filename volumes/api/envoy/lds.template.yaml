@@ -364,10 +364,6 @@ resources:
                                       - header:
                                           name: apikey
                                           string_match:
-                                            exact: '${SERVICE_ROLE_KEY}'
-                                      - header:
-                                          name: apikey
-                                          string_match:
                                             exact: '${SERVICE_ROLE_KEY_ASYMMETRIC}'
 
                       - name: rest-v1-protected
@@ -703,8 +699,6 @@ resources:
                     '@type': >-
                       type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
                     inline_code: |
-                      local ANON_KEY = "${ANON_KEY}"
-                      local SERVICE_ROLE_KEY = "${SERVICE_ROLE_KEY}"
                       local SUPABASE_PUBLISHABLE_KEY = "${SUPABASE_PUBLISHABLE_KEY}"
                       local SUPABASE_SECRET_KEY = "${SUPABASE_SECRET_KEY}"
                       local ANON_KEY_ASYMMETRIC = "${ANON_KEY_ASYMMETRIC}"
@@ -734,11 +728,11 @@ resources:
                           return false
                         end
 
-                        if SERVICE_ROLE_KEY ~= "" and apikey == SERVICE_ROLE_KEY then
+                        if SERVICE_ROLE_KEY_ASYMMETRIC ~= "" and apikey == SERVICE_ROLE_KEY_ASYMMETRIC then
                           return true
                         end
 
-                        if ANON_KEY ~= "" and apikey == ANON_KEY then
+                        if ANON_KEY_ASYMMETRIC ~= "" and apikey == ANON_KEY_ASYMMETRIC then
                           return true
                         end
 
@@ -1056,10 +1050,6 @@ resources:
                             - header:
                                 name: apikey
                                 string_match:
-                                  exact: '${SERVICE_ROLE_KEY}'
-                            - header:
-                                name: apikey
-                                string_match:
                                   exact: '${SERVICE_ROLE_KEY_ASYMMETRIC}'
                         apikey:
                           permissions:
@@ -1079,14 +1069,6 @@ resources:
                                 path:
                                   prefix: /graphql/v1
                           principals:
-                            - header:
-                                name: apikey
-                                string_match:
-                                  exact: '${SERVICE_ROLE_KEY}'
-                            - header:
-                                name: apikey
-                                string_match:
-                                  exact: '${ANON_KEY}'
                             - header:
                                 name: apikey
                                 string_match:

@@ -29,12 +29,12 @@ npm install @supabase/supabase-js
 
 ```dotenv
 VITE_SUPABASE_URL=http://localhost:8000
-VITE_SUPABASE_ANON_KEY=复制本仓库.env中的ANON_KEY
+VITE_SUPABASE_PUBLISHABLE_KEY=复制本仓库.env中的SUPABASE_PUBLISHABLE_KEY
 ```
 
 公网时 URL 改成 `https://api.example.com`。可参考 [client.ts](../examples/client.ts) 的登录、CRUD、上传和订阅函数。Next.js 对应公开变量可使用 `NEXT_PUBLIC_` 前缀；SSR 登录需使用相应服务端 Cookie 方案，不能把单个用户 session 缓存在共享全局客户端里。
 
-只有 `ANON_KEY` 可以出现在浏览器。用户登录后 SDK 自动带上用户 access token，数据库据此应用 RLS。
+只有 `SUPABASE_PUBLISHABLE_KEY` 可以出现在浏览器。用户登录后 SDK 自动带上用户 access token，数据库据此应用 RLS。
 
 ## 注册与登录
 

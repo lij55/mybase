@@ -40,7 +40,7 @@ caddy run --config caddy/Caddyfile --adapter caddyfile
 caddy reload --config caddy/Caddyfile --adapter caddyfile
 ```
 
-Caddy 安装和进程管理独立于 `make up`。后端端口来自初次生成时的 `PUBLIC_API_PORT` / `STUDIO_PORT`，改端口后运行 `make init` 同步生成配置，再 reload Caddy。默认 HTTP listener 用于外部已终止 TLS 的入口，入口须保留原始 Host；不匹配的 Host 返回 404。不要把此 HTTP listener 直接当作公网 HTTPS 服务。
+Caddy 安装和进程管理独立于 `make up`。后端端口来自初次生成时的 `PUBLIC_API_PORT` / `STUDIO_PORT`，改端口后运行 `make init` 同步生成配置，再 reload Caddy。默认 HTTP listener 用于外部已终止 TLS 的入口，入口须保留原始 Host；不匹配 API/Studio 域名的请求默认转发到 `127.0.0.1:8090`（demo Traefik），保留原始 Host。不要把此 HTTP listener 直接当作公网 HTTPS 服务。
 
 此配置使用宿主机 loopback 地址。若 Caddy 放入普通 bridge 网络容器，需要调整网络与 upstream；容器内的 `127.0.0.1` 并非宿主机。
 
@@ -61,14 +61,14 @@ admin.example.com {
 
 ```bash
 curl -i -H 'Host: api.my.supabase.local' http://127.0.0.1:8080/healthz  # 200
-# 先按 README「手动 smoke 验证」读取 ANON_KEY
+# 先按 README「手动 smoke 验证」读取 SUPABASE_PUBLISHABLE_KEY
 curl -i -H 'Host: api.my.supabase.local' \
-  -H "apikey: ${ANON_KEY}" -H "Authorization: Bearer ${ANON_KEY}" \
+  -H "apikey: ${SUPABASE_PUBLISHABLE_KEY}" -H "Authorization: Bearer ${SUPABASE_PUBLISHABLE_KEY}" \
   http://127.0.0.1:8080/auth/v1/health                           # 200
 curl -i -H 'Host: api.my.supabase.local' http://127.0.0.1:8080/         # 404
 curl -i -H 'Host: api.my.supabase.local' http://127.0.0.1:8080/pg/      # 404
 curl -i -H 'Host: admin.my.supabase.local' http://127.0.0.1:8080/       # 401 Basic Auth
-curl -i -H 'Host: unknown.example.com' http://127.0.0.1:8080/     # 404
+curl -i -H 'Host: unknown.example.com' http://127.0.0.1:8080/     # Traefik 无匹配路由时 404；未启动时 502
 ```
 
 管理界面使用 `.env` 的 `DASHBOARD_USERNAME` / `DASHBOARD_PASSWORD`。外部入口配置完成后，另行验证 HTTPS、Studio 登录、Auth 回调、文件上传和 Realtime WebSocket。Caddy reverse_proxy 保留请求路径并支持 WebSocket 升级。业务 API 不应使用交互式登录门禁或共享缓存。
@@ -81,4 +81,6 @@ curl -i -H 'Host: unknown.example.com' http://127.0.0.1:8080/     # 404
 caddy run --config caddy/Caddyfile --adapter caddyfile
 ```
 
-已有 Caddy 进程时使用 `caddy reload --config caddy/Caddyfile --adapter caddyfile`。访问时仍需使用配置的 API / Studio 域名，直接用 IP 的 Host 会返回 404。
+已有 Caddy 进程时使用 `caddy reload --config caddy/Caddyfile --adapter caddyfile`。API / Studio 按配置域名分流；其他请求转发到 demo Traefik 的 `127.0.0.1:8090`。Traefik 仍按 demo 域名分流，未匹配路由时返回 404；未启动 Traefik 时 Caddy 返回 502。
+
+Demo 域名（默认 `authz.localhost`、`todo.localhost`、`notes.localhost`）可通过同一 Caddy 入口访问。它们会落入默认路由，由 Traefik 根据原始 Host 分流。修改 demo 的 `TRAEFIK_PORT` 时需同步修改 Caddy 默认上游端口。

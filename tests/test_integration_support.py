@@ -16,7 +16,7 @@ from integration_support import Instance, WebSocket
 class AcceptanceHelpersTests(unittest.TestCase):
     def test_http_failure_does_not_print_signed_url(self):
         instance = Instance.__new__(Instance)
-        instance.values = {'ANON_KEY': 'key'}
+        instance.values = {'SUPABASE_PUBLISHABLE_KEY': 'key'}
         instance.base = 'http://127.0.0.1'
         instance.opener = Mock()
         instance.opener.open.side_effect = http.client.InvalidURL('path?token=secret')

@@ -49,7 +49,7 @@ flowchart TD
 
 ## 2. public-api：对前端开放的入口
 
-镜像：`nginx:1.28.0-alpine`。业务 API 域名应转发到它，避免直接进入包含管理路由的官方网关。
+镜像：`nginx:1.30.5-alpine`。业务 API 域名应转发到它，避免直接进入包含管理路由的官方网关。
 
 | 配置项 | 位置与含义 |
 | --- | --- |
@@ -70,7 +70,7 @@ flowchart TD
 | 配置项 | 含义 |
 | --- | --- |
 | `STUDIO_PORT` | 本地覆盖配置实际使用的管理网关宿主机端口，默认 8001 |
-| `ANON_KEY` / `SERVICE_ROLE_KEY` | 网关识别的两类 API key；后者具有管理权限 |
+| `SUPABASE_PUBLISHABLE_KEY` / `SUPABASE_SECRET_KEY` | 网关识别的两类 API key；后者具有管理权限 |
 | `DASHBOARD_USERNAME` / `DASHBOARD_PASSWORD` | Studio 入口的 HTTP Basic Auth 凭证 |
 | `SUPABASE_PUBLIC_URL` | 对外 API 地址，参与生成网关配置 |
 | `volumes/api/envoy/lds.template.yaml` | 路由、过滤器、API key 与 Basic Auth 规则模板 |
@@ -80,7 +80,7 @@ flowchart TD
 
 ## 4. studio：管理员界面
 
-镜像：`supabase/studio:2026.09.07-sha-7996410`。用来查看和编辑数据库、执行 SQL、管理用户和文件。Studio 管理员与 Auth 业务用户是不同身份体系。
+镜像：`supabase/studio:2026.09.28-sha-5e59b60`。用来查看和编辑数据库、执行 SQL、管理用户和文件。Studio 管理员与 Auth 业务用户是不同身份体系。
 
 | 配置项 | 含义 |
 | --- | --- |
@@ -96,7 +96,7 @@ flowchart TD
 
 ## 5. auth：用户认证
 
-镜像：`supabase/gotrue:v2.196.0`。保存用户和会话到数据库，签发业务用户 JWT，并处理注册、密码登录、确认邮件、找回密码等流程。
+镜像：`supabase/gotrue:v2.197.0`。保存用户和会话到数据库，签发业务用户 JWT，并处理注册、密码登录、确认邮件、找回密码等流程。
 
 | `.env` 变量 | 容器内映射 / 含义 |
 | --- | --- |
@@ -106,7 +106,7 @@ flowchart TD
 | `DISABLE_SIGNUP` | `GOTRUE_DISABLE_SIGNUP`：默认 true，阻止新用户自助注册 |
 | `ENABLE_EMAIL_SIGNUP` | `GOTRUE_EXTERNAL_EMAIL_ENABLED`：邮箱认证能力开关 |
 | `ENABLE_EMAIL_AUTOCONFIRM` | `GOTRUE_MAILER_AUTOCONFIRM`：是否跳过邮箱确认，默认 false |
-| `JWT_SECRET` / `JWT_EXPIRY` | 用户 JWT 的签名密钥与有效秒数；当前为 HS256、一小时 |
+| `JWT_KEYS` / `JWT_EXPIRY` | ES256 私钥与用户 JWT 有效秒数，默认一小时 |
 | `SMTP_*` / `MAILER_URLPATHS_*` | 发信服务器、凭证、发件身份及验证链接路径 |
 | `ENABLE_ANONYMOUS_USERS` | 是否创建匿名 Auth 用户，默认 false；不同于使用 anon API key |
 | `ENABLE_PHONE_SIGNUP` / `ENABLE_PHONE_AUTOCONFIRM` | 手机认证及跳过验证开关，当前都关闭 |
@@ -115,7 +115,7 @@ OAuth、短信、MFA、SAML 的扩展配置需要相应 `GOTRUE_*` 容器变量�
 
 ## 6. rest：自动数据 API
 
-镜像：`postgrest/postgrest:v14.17`。从数据库结构生成 REST 接口，通过 JWT 切换请求角色，再执行 SQL、grants 与 RLS。
+镜像：`postgrest/postgrest:v16.4`。从数据库结构生成 REST 接口，通过 JWT 切换请求角色，再执行 SQL、grants 与 RLS。
 
 | 配置项 | 含义 |
 | --- | --- |
@@ -124,28 +124,31 @@ OAuth、短信、MFA、SAML 的扩展配置需要相应 `GOTRUE_*` 容器变量�
 | `PGRST_DB_EXTRA_SEARCH_PATH` | 执行数据库对象时补充的搜索路径，不等于直接暴露对象 |
 | `PGRST_DB_URI` | Compose 生成：使用 `authenticator` 角色连接数据库 |
 | `PGRST_DB_ANON_ROLE=anon` | Compose 固定项：没有用户身份时的数据库角色 |
-| `PGRST_JWT_SECRET` | Compose 从 `JWT_JWKS` 或 `JWT_SECRET` 选择验签材料；本项目使用后者 |
+| `PGRST_JWT_SECRET` | Compose 使用 `JWT_JWKS` 中的 ES256 公钥验签 |
 
 REST 不会替你决定业务授权。表有接口不等于应该允许所有人读写；应显式配置 grants 和 RLS。GraphQL 路由会转到数据库函数，但当前 `pg_graphql` 扩展尚未启用，详见 [功能介绍](features.md)。
 
 ## 7. realtime：实时通信
 
-镜像：`supabase/realtime:v2.134.10`。提供 PostgreSQL Changes、Broadcast 与 Presence；数据库变化订阅还需要把对应表加入 publication。
+镜像：`supabase/realtime:v2.140.7`。提供 PostgreSQL Changes、Broadcast 与 Presence；数据库变化订阅还需要把对应表加入 publication。
 
 | 配置项 | 含义 |
 | --- | --- |
 | `REALTIME_DB_ENC_KEY` | 映射 `DB_ENC_KEY`，加密内部数据库连接等敏感字段，恰好 16 个字符 |
-| `JWT_SECRET` | 映射 `API_JWT_SECRET`，校验 JWT |
+| `JWT_SECRET` | 映射 `API_JWT_SECRET`，仅供内部租户管理接口使用 |
+| `JWT_JWKS` | 映射 `API_JWT_JWKS`，初始化租户的 ES256 用户令牌验签公钥 |
 | `SECRET_KEY_BASE` | Realtime 使用的秘密材料，不应随意更换 |
 | `DB_HOST/PORT/USER/PASSWORD/NAME` | Compose 生成的内部数据库连接，当前角色为 `supabase_admin` |
 | `SEED_SELF_HOST=true` | Compose 固定项：准备自托管租户配置 |
 | `realtime-dev.supabase-realtime` | override 中的 Docker DNS 别名，与官方网关目标地址配套，必须保留 |
 
+容器存活检查使用原生 `/healthcheck`，只说明 HTTP 进程可响应；公开 WebSocket 由 `make smoke` 验证，Broadcast、Presence 和数据库事件投递由 `make integration` 验证。
+
 容器名带有 `realtime-dev` 前缀是上游租户识别约定。不要只为“统一命名”删除这个前缀或 DNS 别名。
 
 ## 8. storage：文件服务
 
-镜像：`supabase/storage-api:v1.74.0`。数据库保存 bucket、对象元数据和策略，文件正文保存在本机目录。
+镜像：`supabase/storage-api:v1.79.31`。数据库保存 bucket、对象元数据和策略，文件正文保存在本机目录。
 
 | 配置项 | 含义 |
 | --- | --- |
@@ -162,7 +165,7 @@ REST 不会替你决定业务授权。表有接口不等于应该允许所有人
 
 ## 9. imgproxy：图片转换
 
-镜像：`darthsim/imgproxy:v3.31.4`。被 Storage 内部调用，读取共享的文件目录；它不是另一个独立文件存储。
+镜像：`darthsim/imgproxy:v4.0.17`。被 Storage 内部调用，读取共享的文件目录；它不是另一个独立文件存储。
 
 | 配置项 | 含义 |
 | --- | --- |
@@ -190,14 +193,14 @@ REST 不会替你决定业务授权。表有接口不等于应该允许所有人
 
 ## 11. functions：服务端函数
 
-镜像：`supabase/edge-runtime:v1.76.2`。请求 `/functions/v1/hello` 会由主运行时分发到 `volumes/functions/hello/index.ts`。
+镜像：`supabase/edge-runtime:v1.77.4`。请求 `/functions/v1/hello` 会由主运行时分发到 `volumes/functions/hello/index.ts`。
 
 | 配置项 | 含义 |
 | --- | --- |
 | `FUNCTIONS_VERIFY_JWT` | 映射 `VERIFY_JWT`，控制主入口统一验签，默认 true |
-| `JWT_SECRET` | HS256 验签材料；与 Auth 配套 |
+| `JWT_JWKS` | 通过 `SUPABASE_JWKS` 传给 Functions 的 ES256 公钥 |
 | `SUPABASE_URL=http://api-gw:8000` | Compose 固定项：函数调用内部 Supabase API 的地址 |
-| `SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY` | 从 `.env` 两枚 API JWT 映射；优先携带用户 JWT 执行受 RLS 约束的操作 |
+| `SUPABASE_PUBLISHABLE_KEY` / `SUPABASE_SECRET_KEY` | 通过 `SUPABASE_PUBLISHABLE_KEYS` / `SUPABASE_SECRET_KEYS` JSON 对象暴露给函数；携带用户 JWT 执行受 RLS 约束的操作 |
 | `SUPABASE_DB_URL` | Compose 生成的内部数据库连接串，属于敏感信息 |
 | `volumes/functions` | 主入口及各函数源码目录 |
 | `deno-cache` 命名卷 | 可再生成的依赖缓存，不是业务持久数据 |
@@ -206,7 +209,7 @@ REST 不会替你决定业务授权。表有接口不等于应该允许所有人
 
 ## 12. db：PostgreSQL 数据库
 
-镜像：`supabase/postgres:17.6.1.136`。保存业务数据及 `auth`、`storage`、`_realtime` 等内部 schema 的状态。
+镜像：`supabase/postgres:17.11.0.003`。保存业务数据及 `auth`、`storage`、`_realtime` 等内部 schema 的状态。
 
 | 配置项 | 含义 |
 | --- | --- |
@@ -221,7 +224,7 @@ CPU、内存、磁盘与 PostgreSQL 调优不是靠 `POSTGRES_PASSWORD` 等应�
 
 ## 13. supavisor：数据库连接池
 
-镜像：`supabase/supavisor:2.9.12`。给可信 SQL 客户端提供 Session 与 Transaction 连接方式；不是前端浏览器的 HTTP API。
+镜像：`supabase/supavisor:2.9.13`。给可信 SQL 客户端提供 Session 与 Transaction 连接方式；不是前端浏览器的 HTTP API。
 
 | 配置项 | 含义 |
 | --- | --- |

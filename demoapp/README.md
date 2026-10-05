@@ -12,7 +12,7 @@
 
 ## 单机首次启动
 
-先自行启动并验证同机 Supabase。在根 `.env` 的 `PGRST_DB_SCHEMAS` 中保留原有 schema 并追加 `app_todo,app_notes`，应用配置（参见下文手动流程）。然后在仓库根目录执行：
+先使用默认 schema 配置启动并验证同机 Supabase；新建环境尚未创建 `app_todo` / `app_notes`，此时不要提前把它们加入 `PGRST_DB_SCHEMAS`，否则 PostgREST 可能无法完成 schema cache 初始化。然后在仓库根目录执行：
 
 ```bash
 ./demoapp/start.sh --init
@@ -23,8 +23,10 @@
 1. 只读取已有根 `.env`，获取 Supabase 连接配置和密钥；Supabase 的启动、验证和配置更新由你完成。
 2. 执行 `admin/sql/000_prepare.sql` 和 `admin/sql/001_init.sql`，再为尚不存在的 Todo/Notes schema 执行各自的初始化 SQL。
 3. 提示输入已有 Supabase Auth 用户的 UUID；直接回车则调用 `bootstrap_admin.py`，等待你输入新管理员邮箱、密码及密码确认。
-4. 生成权限为 `0600` 的 `demoapp/.env`：从根 `.env` 复制公开 key 和 service role key，从准备 SQL 读取数据库密码并 URL 编码，填入 `DATABASE_URL`、`ADMIN_USER_IDS`；Docker 网络采用 `<COMPOSE_PROJECT_NAME>_default`，其余使用示例默认值。
+4. 生成权限为 `0600` 的 `demoapp/.env`：从根 `.env` 复制 publishable key 和 secret key，从准备 SQL 读取数据库密码并 URL 编码，填入 `DATABASE_URL`、`ADMIN_USER_IDS`；Docker 网络采用 `<COMPOSE_PROJECT_NAME>_default`，其余使用示例默认值。
 5. 构建并启动三个 demo App 和 Traefik，结束时打印 Data API 的 schema 配置说明及应用命令，供你手动执行。普通启动成功后也会打印。
+
+初始化创建业务 schema 后，再按脚本提示把 `app_todo,app_notes` 加入根 `.env` 的 `PGRST_DB_SCHEMAS`，更新 `rest` 和 `studio`。
 
 首次运行前可修改 `admin/sql/000_prepare.sql` 中的密码。初始化完成后，用第 3 步的 **Auth 用户邮箱和密码**登录 `http://authz.localhost:8090`。普通后续启动只需 `./demoapp/start.sh`，不会执行数据库初始化或创建用户。
 
@@ -44,7 +46,7 @@ Studio 入口账号不会自动创建 Auth 用户；数据库账号也不能用�
 
 使用 Studio 创建用户与 `bootstrap_admin.py` 效果相同：在 **Authentication → Users** 创建邮箱/密码用户并确认邮箱（创建时若有 Auto Confirm User 选项，勾选），复制用户 UUID；首次 `--init` 时输入它，或手动填入 `demoapp/.env` 的 `ADMIN_USER_IDS` 后重新运行 `./demoapp/start.sh`。
 
-登录 Admin 时，Supabase Auth 先验证邮箱和密码，demo 服务端再核对用户 UUID 是否在白名单中。不在白名单中的用户即使身份验证成功，也不能使用管理功能。创建/列出用户由 Admin 服务端使用自己的 service role key 完成，该密钥不交给浏览器；用户自身的登录凭据不会因此获得 Auth 管理接口权限。管理员访问 Todo/Notes 仍需单独授予对应应用权限。
+登录 Admin 时，Supabase Auth 先验证邮箱和密码，demo 服务端再核对用户 UUID 是否在白名单中。不在白名单中的用户即使身份验证成功，也不能使用管理功能。创建/列出用户由 Admin 服务端使用自己的 secret key 完成，该密钥不交给浏览器；用户自身的登录凭据不会因此获得 Auth 管理接口权限。管理员访问 Todo/Notes 仍需单独授予对应应用权限。
 
 以下为手动准备流程；已成功执行 `--init` 时无需重复执行 demo SQL 或创建管理员。Supabase 的 schema 暴露配置仍需自行完成。
 
@@ -128,11 +130,13 @@ chmod 600 .env
 
 编辑 `demoapp/.env`（与根 `.env` 是两个文件，不能 source）：
 
-- `SUPABASE_ANON_KEY`：复制根 `.env` 的 `ANON_KEY`。
-- `SUPABASE_SERVICE_ROLE_KEY`：复制根 `.env` 的 `SERVICE_ROLE_KEY`，仅注入授权后台。
+- `SUPABASE_PUBLISHABLE_KEY`：复制根 `.env` 的 `SUPABASE_PUBLISHABLE_KEY`。
+- `SUPABASE_SECRET_KEY`：复制根 `.env` 的 `SUPABASE_SECRET_KEY`，仅注入授权后台。
 - `DATABASE_URL`：`postgresql://app_authorizer:<URL编码后的密码>@db:5432/postgres`。
 - `ADMIN_USER_IDS`：上述管理员的 Auth UUID，多个 UUID 用逗号分隔。
 - `SUPABASE_DOCKER_NETWORK`：默认 `mybase_default`，自定义部署名称时通常是 `<COMPOSE_PROJECT_NAME>_default`；可用 `docker network ls` 确认。
+
+应用后端直接读取新 `SUPABASE_PUBLISHABLE_KEY` / `SUPABASE_SECRET_KEY`，值是 opaque API key；此次密钥机制更新不改变业务逻辑。
 
 `SUPABASE_URL=http://api-gw:8000` 是容器内部网关 URL，不是浏览器 URL。容器里的 `localhost` 指自己，不能用它连接宿主机 Supabase。
 
@@ -152,7 +156,7 @@ Compose 构建 `mybase-demo-admin:local`、`mybase-demo-todo:local`、`mybase-de
 
 启动后访问表中三个入口。远程主机可以 SSH 转发 `8090`，或者配置 HTTPS 入口及真实域名。公开部署需为登录和 API 提供 HTTPS；域名由 `ADMIN_HOST`、`TODO_HOST`、`NOTES_HOST` 调整，Traefik 不自动配置证书。当前应用密码登录不需要浏览器直连 Supabase，也不需要 CORS。
 
-Traefik 使用 Docker provider、限定标签和 `exposedByDefault=false`，不会自动发布现有 Supabase 容器。它需要读取宿主机 Docker socket；后台之外的 App 均无此挂载，也不接收数据库密码或 service role key。配置与标签依据[官方 Docker provider 文档](https://doc.traefik.io/traefik/reference/install-configuration/providers/docker/)。
+Traefik 使用 Docker provider、限定标签和 `exposedByDefault=false`，不会自动发布现有 Supabase 容器。它需要读取宿主机 Docker socket；后台之外的 App 均无此挂载，也不接收数据库密码或 secret key。配置与标签依据[官方 Docker provider 文档](https://doc.traefik.io/traefik/reference/install-configuration/providers/docker/)。
 
 各自单独构建时，**构建上下文都是 demoapp**：
 

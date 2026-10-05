@@ -6,6 +6,8 @@
 
 需要 Docker Engine、Docker Compose **2.24.4+**、GNU Make、Python **3.11+**，当前用户须有 Docker 权限。建议从 4 核、8 GB RAM、80 GB SSD 起步，并根据实际负载评估容量。
 
+初始化与配置校验需要 Node.js >= 18（使用内置 crypto，无 npm 依赖）。新环境使用 `sb_publishable_` / `sb_secret_` API key 和 ES256 用户 JWT。
+
 ```bash
 make up
 ```
@@ -19,7 +21,7 @@ make up
 | Session 连接池 | 127.0.0.1:5432 | SQL 客户端、迁移 |
 | Transaction 连接池 | 127.0.0.1:6543 | 服务端短连接 |
 
-所有宿主机端口只监听 `127.0.0.1`。前端只使用 `SUPABASE_PUBLIC_URL` 和 `ANON_KEY`；`SERVICE_ROLE_KEY` 和数据库密码只能用于可信服务端。
+所有宿主机端口只监听 `127.0.0.1`。前端只使用 `SUPABASE_PUBLIC_URL` 和 `SUPABASE_PUBLISHABLE_KEY`；`SUPABASE_SECRET_KEY` 和数据库密码只能用于可信服务端。
 
 ```bash
 make check                 # 配置校验，不打印密钥
@@ -37,7 +39,7 @@ make unit                  # 仅离线单元测试，无需 Docker
 
 ## 手动 smoke 验证
 
-`/healthz` 不需要认证；`/auth/v1/health` 和 `/rest/v1/` 经过网关，需要 `apikey`。Auth 请求同时带上 `Authorization: Bearer <ANON_KEY>`，与 `make smoke` 一致。缺少或无效的 API key 会返回 401 或 403；API 根路径 `/` 返回 404 是预期行为。
+`/healthz` 不需要认证；`/auth/v1/health` 和 `/rest/v1/` 经过网关，需要 `apikey`。Auth 请求同时带上 `Authorization: Bearer <SUPABASE_PUBLISHABLE_KEY>`，与 `make smoke` 一致。缺少或无效的 API key 会返回 401 或 403；API 根路径 `/` 返回 404 是预期行为。
 
 先在仓库根目录读取配置（以下命令使用 Bash，不要 `source .env`）：
 
@@ -53,8 +55,8 @@ print(values[sys.argv[1]])
 PYCONFIG
 }
 
-ANON_KEY=$(config_value ANON_KEY)
-SERVICE_ROLE_KEY=$(config_value SERVICE_ROLE_KEY)
+SUPABASE_PUBLISHABLE_KEY=$(config_value SUPABASE_PUBLISHABLE_KEY)
+SUPABASE_SECRET_KEY=$(config_value SUPABASE_SECRET_KEY)
 PUBLIC_HOST=$(config_value PUBLIC_HOST)
 CADDY_PORT=$(config_value CADDY_PORT)
 API_HOST="api.${PUBLIC_HOST}"
@@ -74,13 +76,13 @@ curl --noproxy '*' -i -H "Host: ${API_HOST}" "${CADDY_BASE}/healthz"
 
 # Auth 健康：200，返回版本信息
 curl --noproxy '*' -i -H "Host: ${API_HOST}" \
-  -H "apikey: ${ANON_KEY}" \
-  -H "Authorization: Bearer ${ANON_KEY}" \
+  -H "apikey: ${SUPABASE_PUBLISHABLE_KEY}" \
+  -H "Authorization: Bearer ${SUPABASE_PUBLISHABLE_KEY}" \
   "${CADDY_BASE}/auth/v1/health"
 
-# REST 可用：200（SERVICE_ROLE_KEY 只在可信本机使用）
+# REST 可用：200（SUPABASE_SECRET_KEY 只在可信本机使用）
 curl --noproxy '*' -i -H "Host: ${API_HOST}" \
-  -H "apikey: ${SERVICE_ROLE_KEY}" "${CADDY_BASE}/rest/v1/"
+  -H "apikey: ${SUPABASE_SECRET_KEY}" "${CADDY_BASE}/rest/v1/"
 
 # REST 未认证拒绝：401 或 403
 curl --noproxy '*' -i -H "Host: ${API_HOST}" "${CADDY_BASE}/rest/v1/"
@@ -94,7 +96,7 @@ done
 # Studio 未登录：401，响应头包含 WWW-Authenticate: Basic
 curl --noproxy '*' -i -H "Host: ${ADMIN_HOST}" "${CADDY_BASE}/"
 
-# 未知 Host：404
+# 未知 Host：转发 demo Traefik；无匹配路由时 404，Traefik 未启动时 502
 curl --noproxy '*' -i -H 'Host: unknown.invalid' "${CADDY_BASE}/"
 ```
 
@@ -150,4 +152,4 @@ flowchart LR
 caddy run --config caddy/Caddyfile --adapter caddyfile
 ```
 
-已有 Caddy 进程时使用 `caddy reload --config caddy/Caddyfile --adapter caddyfile`。访问时仍需使用配置的 API / Studio 域名，直接用 IP 的 Host 会返回 404。
+已有 Caddy 进程时使用 `caddy reload --config caddy/Caddyfile --adapter caddyfile`。API / Studio 按配置域名分流；其他请求转发到 demo Traefik 的 `127.0.0.1:8090`。Traefik 仍按 demo 域名分流，未匹配路由时返回 404；未启动 Traefik 时 Caddy 返回 502。

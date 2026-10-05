@@ -8,7 +8,7 @@ from pathlib import Path
 def main():
     root = Path(__file__).resolve().parents[1]
     name = 'mybase-demo-sql-' + uuid.uuid4().hex[:12]
-    image = 'supabase/postgres:17.6.1.136'
+    image = 'supabase/postgres:17.11.0.003'
     subprocess.run(['docker', 'run', '-d', '--name', name, '--network', 'none', '--user', 'postgres',
                     '--entrypoint', 'bash', image, '-c',
                     'initdb -D /tmp/demo-db -A trust >/tmp/init.log 2>&1 && exec postgres -D /tmp/demo-db -k /tmp -c listen_addresses='],

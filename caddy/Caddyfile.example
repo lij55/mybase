@@ -17,8 +17,8 @@ http://:@@CADDY_PORT@@ {
 		reverse_proxy 127.0.0.1:@@STUDIO_PORT@@
 	}
 
-	# Unknown hosts must never fall through to Studio.
+	# All other hosts go to the demo Traefik entrypoint; preserve Host routing.
 	handle {
-		respond "Not found" 404
+		reverse_proxy 127.0.0.1:8090
 	}
 }

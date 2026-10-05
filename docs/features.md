@@ -35,11 +35,11 @@ import { createClient } from '@supabase/supabase-js'
 
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,       // 本地 http://localhost:8000
-  import.meta.env.VITE_SUPABASE_ANON_KEY,  // 复制当前实例 ANON_KEY
+  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,  // 复制当前实例 SUPABASE_PUBLISHABLE_KEY
 )
 ```
 
-这些变量来自前端项目的 `.env.local`。不要把服务端 `.env` 整份复制到前端；`SERVICE_ROLE_KEY`、`JWT_SECRET` 和数据库密码绝不能放入浏览器。
+这些变量来自前端项目的 `.env.local`。不要把服务端 `.env` 整份复制到前端；`SUPABASE_SECRET_KEY`、`JWT_SECRET` 和数据库密码绝不能放入浏览器。
 
 本文的 `todos` 示例需要先以管理员身份运行 [001_todos.sql](../examples/001_todos.sql)，并以真实业务用户登录。文件示例还需执行 [002_storage.sql](../examples/002_storage.sql)。这些 SQL 是一次性建表示例，不要在已有同名对象的数据库中重复执行。完整接入步骤见 [使用文档](usage.md)。
 
@@ -217,7 +217,7 @@ const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/graphql/v1`, 
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
-    apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+    apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
     Authorization: `Bearer ${session.access_token}`,
   },
   body: JSON.stringify({

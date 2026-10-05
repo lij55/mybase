@@ -1,4 +1,4 @@
-// Local authenticated example for this deployment's legacy JWT mode.
+// Authenticated example using opaque API keys and ES256 user JWTs.
 const cors = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -14,7 +14,7 @@ Deno.serve(async (req: Request) => {
   // a valid, publicly available anon JWT alone must not grant user-only access.
   const response = await fetch(`${Deno.env.get('SUPABASE_URL')}/auth/v1/user`, {
     headers: {
-      apikey: Deno.env.get('SUPABASE_ANON_KEY')!,
+      apikey: JSON.parse(Deno.env.get('SUPABASE_PUBLISHABLE_KEYS')!).default,
       Authorization: req.headers.get('Authorization') ?? '',
     },
   })

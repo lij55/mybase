@@ -26,7 +26,7 @@ class ConfigurationTests(unittest.TestCase):
     def test_secure_valid_defaults(self):
         manage.validate(self.values)
         self.assertEqual((self.root / '.env').stat().st_mode & 0o777, 0o600)
-        self.assertNotEqual(self.values['ANON_KEY'], self.values['SERVICE_ROLE_KEY'])
+        self.assertNotEqual(self.values['SUPABASE_PUBLISHABLE_KEY'], self.values['SUPABASE_SECRET_KEY'])
 
     def test_repeated_init_preserves_secrets(self):
         before = (self.root / '.env').read_bytes()
@@ -41,6 +41,17 @@ class ConfigurationTests(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             manage.init(self.root)
         self.assertEqual(path.read_text(), '# custom config\n')
+
+    def test_caddy_upgrades_generated_fallback_to_demo(self):
+        path = self.root / 'caddy/Caddyfile'
+        text = path.read_text()
+        path.write_text(text.replace(
+            '\t# All other hosts go to the demo Traefik entrypoint; preserve Host routing.\n\thandle {\n\t\treverse_proxy 127.0.0.1:8090\n\t}',
+            '\t# Unknown hosts must never fall through to Studio.\n\thandle {\n\t\trespond "Not found" 404\n\t}'))
+        manage.init_caddy(self.root, self.values)
+        self.assertEqual(path.read_text(), text)
+        self.assertIn('reverse_proxy 127.0.0.1:8090', text)
+        self.assertNotIn('respond "Not found" 404', text)
 
     def test_caddy_bind_refreshes_legacy_and_generated_configs(self):
         path = self.root / 'caddy/Caddyfile'
@@ -70,7 +81,7 @@ class ConfigurationTests(unittest.TestCase):
 
     def test_minimal_env_and_shared_domain(self):
         raw = manage.read_env(self.root / '.env')
-        self.assertEqual(set(raw), {'PUBLIC_HOST', *manage.SECRET_BYTES, 'ANON_KEY', 'SERVICE_ROLE_KEY'})
+        self.assertEqual(set(raw), {'PUBLIC_HOST', *manage.SECRET_BYTES, *manage.AUTH_FIELDS})
         self.assertEqual(self.values['SUPABASE_PUBLIC_URL'], 'https://api.my.supabase.local')
         self.assertEqual(self.values['API_EXTERNAL_URL'], 'https://api.my.supabase.local/auth/v1')
         text = (self.root / 'caddy/Caddyfile').read_text()
@@ -110,10 +121,35 @@ class ConfigurationTests(unittest.TestCase):
         manage.init_caddy(self.root, self.values)
         self.assertIn('@api host api.my.supabase.local', path.read_text())
 
-    def test_wrong_jwt_secret_rejected(self):
-        self.values['JWT_SECRET'] = 'a' * 64
+    def test_es256_signature_and_public_jwks(self):
+        import json
+        public = json.loads(self.values['JWT_JWKS'])['keys'][0]
+        self.assertEqual(public['alg'], 'ES256')
+        self.assertNotIn('d', public)
+        self.assertNotIn('k', public)
+        self.values['ANON_KEY_ASYMMETRIC'] = self.values['SERVICE_ROLE_KEY_ASYMMETRIC']
         with self.assertRaisesRegex(ValueError, '签名'):
             manage.validate(self.values)
+
+    def test_mismatched_jwks_rejected(self):
+        other = manage.auth_keys('generate')
+        self.values['JWT_JWKS'] = other['JWT_JWKS']
+        with self.assertRaises(ValueError):
+            manage.validate(self.values)
+
+    def test_partial_key_group_is_not_regenerated(self):
+        path = self.root / '.env'
+        path.write_text(path.read_text().replace(self.values['SUPABASE_SECRET_KEY'], ''))
+        before = path.read_bytes()
+        with self.assertRaisesRegex(ValueError, '不完整'):
+            manage.init(self.root)
+        self.assertEqual(path.read_bytes(), before)
+
+    def test_api_key_rotation_does_not_change_signing_keys(self):
+        other = manage.auth_keys('generate')
+        self.values['SUPABASE_PUBLISHABLE_KEY'] = other['SUPABASE_PUBLISHABLE_KEY']
+        self.values['SUPABASE_SECRET_KEY'] = other['SUPABASE_SECRET_KEY']
+        manage.validate(self.values)
 
     def test_data_without_env_refuses_regeneration(self):
         data = self.root / 'volumes/db/data'
